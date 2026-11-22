@@ -50,7 +50,9 @@ class Settings:
         cache_dir = Path(
             os.getenv("FUNCGUARD_CACHE_DIR", str(REPO_ROOT / "cache"))
         ).resolve()
-        proxy = os.getenv("FUNCGUARD_GIT_PROXY", "http://127.0.0.1:7897").strip()
+        # 代理不设默认值：只有显式配置 FUNCGUARD_GIT_PROXY 时才注入，
+        # 避免在他人机器上强制指向不存在的本机代理。
+        proxy = os.getenv("FUNCGUARD_GIT_PROXY", "").strip()
         return cls(
             cache_dir=cache_dir,
             git_dir=cache_dir / "git",
