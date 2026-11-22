@@ -84,14 +84,29 @@ class SnapshotManager:
 
         version_role = "vulnerable" if sample.target == 1 else "fixed"
         if not ref.is_github:
-            return SnapshotOutcome(
-                status="manual_pending",
-                ref=ref,
-                requested_commit=ref.commit,
-                version_role=version_role,
+            if not ref.mirror:
+                return SnapshotOutcome(
+                    status="manual_pending",
+                    ref=ref,
+                    requested_commit=ref.commit,
+                    version_role=version_role,
+                    reason=ref.reason,
+                    elapsed_seconds=round(time.time() - started, 2),
+                )
+            # 非 GitHub 链接但有等价 GitHub 镜像：用镜像仓库取同一 commit。
+            mirror = ref.mirror
+            mirror_owner, mirror_repo = mirror.split("/", 1)
+            mirror_note = f"mirror: github.com/{mirror}（原链接 {ref.raw_url}）"
+            ref = CommitRef(
+                raw_url=ref.raw_url,
+                provider="github",
+                owner=mirror_owner,
+                repo=mirror_repo,
+                commit=ref.commit,
                 reason=ref.reason,
-                elapsed_seconds=round(time.time() - started, 2),
             )
+        else:
+            mirror_note = None
 
         try:
             with self._lock_for(ref.repo_key):
@@ -101,7 +116,12 @@ class SnapshotManager:
                 repo_path: Path | None = None
 
                 # 主链路：blobless clone -> 按 SHA fetch -> rev-parse 取父提交。
-                if ref.repo_key in self._git_unavailable:
+                # 镜像链接且 target=0 时目标就是该提交本身，无需克隆仓库。
+                if mirror_note and sample.target != 1 and len(ref.commit) == 40:
+                    resolved = ref.commit
+                    method = "manual"
+                    note = "commit-asis: 镜像链接 target=0 直接使用该提交"
+                elif ref.repo_key in self._git_unavailable:
                     resolved = self.git.resolve_commit_shallow(
                         ref, ref.commit, sample.target
                     )
@@ -173,6 +193,7 @@ class SnapshotManager:
                         raise GitError(f"快照目录包含 .git：{snapshot_dir}")
                     if not any(snapshot_dir.iterdir()):
                         raise GitError(f"快照目录为空：{snapshot_dir}")
+                    note = " | ".join(x for x in (mirror_note, note) if x) or None
                     self._write_json(
                         marker_path,
                         {

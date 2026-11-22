@@ -30,6 +30,9 @@ class CommitRef:
     repo: str | None
     commit: str | None
     reason: str | None = None
+    # 非 GitHub 链接若在 GitHub 有等价镜像，这里记录 {owner}/{repo}，
+    # 由快照管理器改用镜像仓库取同一 commit。
+    mirror: str | None = None
 
     @property
     def is_github(self) -> bool:
@@ -68,7 +71,8 @@ def classify_commit_url(url: str) -> CommitRef:
             owner="qemu",
             repo="qemu",
             commit=commit,
-            reason="非 GitHub 链接，需人工准备对应版本快照",
+            reason="非 GitHub 链接；git.qemu.org 已重定向失效，改用 GitHub 镜像 qemu/qemu",
+            mirror="qemu/qemu",
         )
 
     return CommitRef(
