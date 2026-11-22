@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/repo_snapshot.schema.json",
+  "title": "RepoSnapshot",
+  "description": "单个样本对应版本的只读仓库快照元数据；快照目录本身不允许包含 .git。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "idx",
+    "commit_url",
+    "requested_commit",
+    "resolved_commit",
+    "version_role",
+    "snapshot_dir",
+    "method",
+    "has_git_dir"
+  ],
+  "properties": {
+    "idx": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "commit_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{7,40}$",
+      "description": "从 commit_url 解析出的提交"
+    },
+    "resolved_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{7,40}$",
+      "description": "target=1 时为第一父提交，target=0 时为提交本身"
+    },
+    "version_role": {
+      "type": "string",
+      "enum": ["vulnerable", "fixed"],
+      "description": "与 target 对应：1 → vulnerable，0 → fixed"
+    },
+    "snapshot_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "快照目录相对仓库根或绝对路径；目录内不得含 .git"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["git-archive", "git-worktree", "manual"],
+      "description": "快照生成方式；manual 用于非 GitHub 或网络受限样本"
+    },
+    "has_git_dir": {
+      "const": false,
+      "description": "必须为 false，从根上避免 diff/log 泄漏"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/trace_event.schema.json",
+  "title": "TraceEvent",
+  "description": "Agent 运行过程中的单条可追溯事件，用于 UI 实时展示与报告复现。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "seq", "type", "status", "timestamp"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "同一 run 内单调递增，从 0 或 1 开始"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "run_start",
+        "knowledge_search",
+        "repo_tool",
+        "llm_step",
+        "decision",
+        "report",
+        "run_end",
+        "error"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "name": {
+      "type": "string",
+      "description": "工具名或步骤名，例如 grep / read_file / knowledge_search"
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object",
+      "description": "事件明细；由具体 type 约定，不在此处限制字段"
+    }
+  }
+}

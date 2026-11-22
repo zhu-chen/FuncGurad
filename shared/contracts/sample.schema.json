@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/sample.schema.json",
+  "title": "Sample",
+  "description": "测试集单条样本，对应 test.jsonl 的一行。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idx", "commit_url", "target", "func"],
+  "properties": {
+    "idx": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "样本唯一编号"
+    },
+    "commit_url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "修复提交链接；可能是 GitHub 标准 URL，也可能是 git.qemu.org 等非标准 URL"
+    },
+    "target": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 表示漏洞版，0 表示修复版"
+    },
+    "func": {
+      "type": "string",
+      "minLength": 1,
+      "description": "待检测的 C/C++ 函数文本"
+    }
+  }
+}

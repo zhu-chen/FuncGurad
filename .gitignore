@@ -221,3 +221,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FuncGurad 本地缓存
+# 仓库快照、克隆缓存、测试数据与基线输出均不入库
+cache/

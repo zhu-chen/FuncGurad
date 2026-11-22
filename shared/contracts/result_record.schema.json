@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/result_record.schema.json",
+  "title": "ResultRecord",
+  "description": "result.jsonl 的单条记录；只允许 idx 与 prediction 两个字段。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idx", "prediction"],
+  "properties": {
+    "idx": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "必须来自测试集，不能是未知 idx"
+    },
+    "prediction": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 表示有漏洞，0 表示无漏洞"
+    }
+  }
+}
