@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import AgentSettings
+from backend.providers import create_provider
 from backend.providers.base import ProviderError
 from backend.services.run_service import run as run_samples
-from backend.services.sample_service import SampleServiceError
-from repo_service.config import REPO_ROOT
+from backend.services.sample_service import SampleServiceError, load_dataset
+from repo_service.config import REPO_ROOT, display_path
+from repo_service.config import Settings as RepoServiceSettings
 from repo_tools.base import ToolError
 
 
@@ -109,6 +111,61 @@ def _print_summary(payload: dict[str, Any]) -> None:
     print("  result.jsonl / report.json / trace.jsonl")
 
 
+def _check_data() -> int:
+    """检查首次运行所需数据是否就绪。"""
+    repo_settings = RepoServiceSettings.from_env()
+    dataset_path = _default_dataset()
+    problems = 0
+
+    if dataset_path.exists():
+        try:
+            samples, _ = load_dataset(dataset_path)
+            print(f"[OK] 测试集: {display_path(dataset_path)}（{len(samples)} 条样本）")
+        except SampleServiceError as exc:
+            problems += 1
+            print(f"[损坏] 测试集: {exc}")
+    else:
+        problems += 1
+        print(f"[缺失] 测试集: {display_path(dataset_path)}")
+        print("       从课程材料获取，或按 docs/handoff/2026-11-22-p2-snapshot.md 准备。")
+
+    meta_dir = repo_settings.sample_meta_dir
+    meta_files = list(meta_dir.glob("*.json")) if meta_dir.is_dir() else []
+    if meta_files:
+        print(f"[OK] 样本快照元数据: {display_path(meta_dir)}（{len(meta_files)} 个）")
+    else:
+        problems += 1
+        print(f"[缺失] 样本快照元数据: {display_path(meta_dir)}/*.json")
+        print("       运行 python -m repo_service.prepare --only-idx <idx> 生成。")
+
+    snapshots_dir = repo_settings.snapshots_dir
+    snapshot_count = (
+        sum(1 for item in snapshots_dir.iterdir() if item.is_dir())
+        if snapshots_dir.is_dir()
+        else 0
+    )
+    if snapshot_count:
+        print(f"[OK] 快照目录: {display_path(snapshots_dir)}（{snapshot_count} 个）")
+    else:
+        problems += 1
+        print(f"[缺失] 快照目录: {display_path(snapshots_dir)}（为空或不存在）")
+
+    try:
+        provider, fallback = create_provider(AgentSettings.from_env())
+        print(f"[OK] provider: {provider.name}（is_stub={provider.is_stub}）")
+        if fallback:
+            print(f"       回退原因: {fallback}")
+    except ProviderError as exc:
+        problems += 1
+        print(f"[错误] provider: {exc}")
+
+    if problems:
+        print(f"结论: 缺少 {problems} 类数据，服务可启动但运行会返回 503。")
+        return 2
+    print("结论: 数据就绪，可以启动服务。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m backend.cli", description="FuncGurad P4 Agent 运行入口"
@@ -140,11 +197,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="只跑指定样本，不自动补齐相邻配对样本",
     )
+    subparsers.add_parser("check", help="检查首次运行所需数据是否就绪")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.command == "check":
+        return _check_data()
+
     settings = AgentSettings.from_env()
     dataset_path = args.dataset or _default_dataset()
 

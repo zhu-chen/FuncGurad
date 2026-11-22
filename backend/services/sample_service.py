@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from bench.dataset import Sample, iter_pairs, load_samples
-from repo_service.config import REPO_ROOT
+from repo_service.config import REPO_ROOT, display_path
 from repo_service.config import Settings as RepoServiceSettings
 
 
@@ -16,7 +16,12 @@ class SampleServiceError(RuntimeError):
 
 def load_dataset(dataset_path: Path) -> tuple[list[Sample], dict[int, Sample]]:
     if not dataset_path.exists():
-        raise SampleServiceError(f"测试集不存在: {dataset_path}")
+        raise SampleServiceError(
+            f"测试集不存在: {display_path(dataset_path)}。"
+            "测试集属于本地课程数据，不入库；请从课程材料获取，"
+            "或按 docs/handoff/2026-11-22-p2-snapshot.md 的流程准备后放到该路径。"
+            "准备后可运行 python -m backend.cli check 自检。"
+        )
     samples = load_samples(dataset_path)
     return samples, {sample.idx: sample for sample in samples}
 

@@ -56,6 +56,21 @@ class JobService:
             }
         return dict(self._provider_info)
 
+    def data_status(self) -> dict[str, Any]:
+        """检查首次运行所需数据是否就绪，返回缺失项与可读说明。"""
+        if not self.dataset_path.exists():
+            missing = display_path(self.dataset_path)
+            return {
+                "ready": False,
+                "missing": [missing],
+                "message": (
+                    f"缺少测试集 {missing}。测试集属于本地课程数据，不入库；"
+                    "请从课程材料获取，或按 docs/handoff/2026-11-22-p2-snapshot.md "
+                    "的流程准备。准备后可运行 python -m backend.cli check 自检。"
+                ),
+            }
+        return {"ready": True, "missing": [], "message": ""}
+
     def dataset_stats(self) -> dict[str, Any]:
         samples, _ = load_dataset(self.dataset_path)
         return {

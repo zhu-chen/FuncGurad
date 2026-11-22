@@ -29,6 +29,8 @@ python -m backend.server --open
 
 启动后浏览器会打开 `http://127.0.0.1:8000`，界面顶部会标注“占位模型”。
 
+> 没有本地数据时首页仍可打开，但运行会提示缺少数据（HTTP 503），不会静默失败。
+
 前端已构建并入库（`web/dist`），无需 `npm install` 即可使用。需要修改前端时再执行：
 
 ```powershell
@@ -36,6 +38,29 @@ cd web
 npm install
 npm run dev
 ```
+
+## 运行前准备
+
+以下数据是本地课程数据，**不入库**，需要自行生成或从课程材料获取：
+
+| 路径 | 内容 |
+|---|---|
+| `cache/dataset/test.jsonl` | 300 条测试样本（150 对） |
+| `cache/meta/samples/*.json` | 每个 idx 的快照元数据（含 `snapshot_dir`） |
+| `cache/snapshots/*` | 只读仓库快照，供 Agent 工具检索 |
+
+准备方式：
+
+1. 从课程材料获取 `test.jsonl`，放到 `cache/dataset/test.jsonl`。
+2. 按 [P2 交接文档](docs/handoff/2026-11-22-p2-snapshot.md) 的流程生成快照与元数据，例如：
+   `python -m repo_service.prepare --only-idx 194989 --only-idx 218785`
+3. 运行数据自检：
+
+```powershell
+python -m backend.cli check
+```
+
+自检会逐项列出测试集、样本元数据、快照目录和 provider 的状态，缺失时给出准备提示；全部就绪时退出码为 0。
 
 ### 本机代理
 
