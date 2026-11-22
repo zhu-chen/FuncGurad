@@ -225,3 +225,7 @@ __marimo__/
 # FuncGurad 本地缓存
 # 仓库快照、克隆缓存、测试数据与基线输出均不入库
 cache/
+
+# P5 前端构建产物：仓库内保留 dist 以支持免构建启动
+!web/dist/
+!web/dist/**
