@@ -155,7 +155,7 @@ python cache/dataset/evaluation.py --dataset cache/dataset/test.jsonl --result c
 ## 踩坑与禁区
 
 1. **网络**：本机直连 `github.com:443` TLS 握手失败；需走本地代理 `127.0.0.1:7897`。本次仅在命令上临时加 `-c http.proxy=...`，**未写入仓库配置**，避免污染他人环境。
-2. **凭证**：token 只存放在 `E:\软件工程\.git-credentials-github`；仓库级 `credential.helper` 指向该文件，并在其前面加了空值以覆盖全局 `store`，防止写入 C 盘 `~/.git-credentials`。任何文档、代码、提交信息都不得出现明文 token。
+2. **凭证**：token 存放在仓库外的凭证文件，由仓库级 `credential.helper` 引用（其前加空值以覆盖全局 `store`，防止写入 `~/.git-credentials`）。任何文档、代码、提交信息都不得出现明文 token。
 3. **测试数据**：`test.jsonl`、`knowledge.jsonl`、仓库快照、基线输出全部放 `cache/`，已被 `.gitignore` 忽略；不要为了“方便”提交进仓库。
 4. **评测口径**：按测试集**相邻两条**配对，身份由 `target` 决定，不是按 `commit_url` 分组。写任何统计逻辑前先读 `bench/dataset.py`。
 5. **基线等级**：全 0 / 全 1 的最终等级都是 D，这是 P-C=0 的正常结果，不要误判为脚本 bug。

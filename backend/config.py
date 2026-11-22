@@ -59,10 +59,12 @@ class AgentSettings:
             or os.getenv("OPENAI_API_KEY")
             or ""
         ).strip()
+        # 代理不设默认值：只有显式配置时才注入，
+        # 避免在他人机器上强制指向不存在的本机代理。
         proxy = (
             os.getenv("FUNCGUARD_LLM_PROXY")
             or os.getenv("FUNCGUARD_GIT_PROXY")
-            or "http://127.0.0.1:7897"
+            or ""
         ).strip()
         runs_dir = Path(
             os.getenv("FUNCGUARD_AGENT_RUNS_DIR", str(cache_dir / "runs"))
