@@ -696,6 +696,32 @@ summary {
   text-align: center;
 }
 
+.data-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 206, 107, 0.45);
+  border-radius: var(--radius);
+  background: rgba(255, 206, 107, 0.1);
+  color: var(--warn);
+}
+
+.data-warning span {
+  color: var(--text);
+}
+
+.data-warning code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--warn);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
 @media (max-width: 1280px) {
   .grid {
     grid-template-columns: 320px minmax(0, 1fr);

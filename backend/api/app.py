@@ -16,13 +16,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.job_service import JobError, JobService
 from backend.config import AgentSettings
 from backend.providers.base import ProviderError
+from backend.services.sample_service import SampleServiceError
 from repo_service.config import REPO_ROOT
 
 
-def _ok(data: Any, status_code: int = 200) -> JSONResponse:
+def _ok(data: Any, status_code: int = 200, ok: bool = True) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content={"ok": True, "data": data, "error": None},
+        content={"ok": ok, "data": data, "error": None},
     )
 
 
@@ -54,6 +55,14 @@ def create_app() -> FastAPI:
     ).resolve()
     jobs = JobService(settings, dataset_path)
 
+    data_state = jobs.data_status()
+    if not data_state["ready"]:
+        print(
+            "!! FuncGurad 警告: 数据未就绪（"
+            + "、".join(data_state["missing"])
+            + "），界面可打开，但运行会返回 503；准备方式见 README「运行前准备」。"
+        )
+
     app = FastAPI(title="FuncGurad P5", version="0.1.0")
     app.state.jobs = jobs
     app.state.settings = settings
@@ -78,6 +87,13 @@ def create_app() -> FastAPI:
     def handle_provider_error(request: Request, exc: ProviderError) -> JSONResponse:
         return _error(503, f"模型 provider 不可用：{exc}", "provider_unavailable")
 
+    @app.exception_handler(SampleServiceError)
+    def handle_sample_error(
+        request: Request, exc: SampleServiceError
+    ) -> JSONResponse:
+        # 数据未就绪属于服务端依赖缺失：服务在线但暂时无法完成请求，用 503。
+        return _error(503, str(exc), "data_not_ready")
+
     @app.exception_handler(RequestValidationError)
     def handle_validation_error(
         request: Request, exc: RequestValidationError
@@ -95,6 +111,18 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health() -> JSONResponse:
+        data_state = jobs.data_status()
+        if not data_state["ready"]:
+            return _ok(
+                {
+                    "status": "degraded",
+                    "provider": jobs.provider_info(),
+                    "missing": data_state["missing"],
+                    "message": data_state["message"],
+                    "runs_dir": str(settings.runs_dir),
+                },
+                ok=False,
+            )
         return _ok(
             {
                 "status": "ok",

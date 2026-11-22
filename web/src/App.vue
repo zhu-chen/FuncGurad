@@ -401,6 +401,12 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <div v-if="health?.status === 'degraded'" class="data-warning">
+      <strong>数据未就绪</strong>
+      <span>{{ health.message }}</span>
+      <code v-if="health.missing?.length">缺失：{{ health.missing.join('、') }}</code>
+    </div>
+
     <transition name="toast">
       <div v-if="toast" class="toast">{{ toast }}</div>
     </transition>

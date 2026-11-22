@@ -20,7 +20,10 @@ const STATUS_MESSAGE = {
   503: '服务暂不可用',
 }
 
-async function request(path, { method = 'GET', body, timeout = 30000 } = {}) {
+async function request(
+  path,
+  { method = 'GET', body, timeout = 30000, allowNotOk = false } = {}
+) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeout)
   try {
@@ -38,7 +41,7 @@ async function request(path, { method = 'GET', body, timeout = 30000 } = {}) {
       payload = null
     }
 
-    if (!response.ok || payload?.ok === false) {
+    if (!response.ok || (payload?.ok === false && !allowNotOk)) {
       const message =
         payload?.error?.message ||
         STATUS_MESSAGE[response.status] ||
@@ -64,7 +67,7 @@ async function request(path, { method = 'GET', body, timeout = 30000 } = {}) {
 }
 
 export const api = {
-  health: () => request('/health'),
+  health: () => request('/health', { allowNotOk: true }),
   pairs: (limit = 30) => request(`/pairs?limit=${limit}`),
   runs: (limit = 20) => request(`/runs?limit=${limit}`),
   createRun: (idx, pair = true) =>
