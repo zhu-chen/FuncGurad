@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/knowledge_hit.schema.json",
+  "title": "KnowledgeHit",
+  "description": "知识库检索返回的单条命中；测试集样本不得进入知识库。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ref", "score", "source_idx"],
+  "properties": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "稳定引用，例如 knowledge:0"
+    },
+    "score": {
+      "type": "number",
+      "description": "检索得分；不同检索器量纲可不同，不强制归一化"
+    },
+    "source_idx": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "知识库原始记录 idx"
+    },
+    "project": {
+      "type": ["string", "null"]
+    },
+    "cve": {
+      "type": ["string", "null"]
+    },
+    "cwe": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "func_signature": {
+      "type": ["string", "null"]
+    },
+    "summary": {
+      "type": ["string", "null"],
+      "description": "面向模型的漏洞模式摘要，不得包含测试集修复答案"
+    },
+    "retriever": {
+      "type": "string",
+      "description": "产生该命中的检索器，例如 bm25 / vector / hybrid"
+    }
+  }
+}

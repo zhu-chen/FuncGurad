@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/eval_report.schema.json",
+  "title": "EvalReport",
+  "description": "一次评测的统计结果，统计口径与官方 evaluation.py 一致。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "total_samples",
+    "unique_idx",
+    "pairs_total",
+    "pairs_evaluated",
+    "counts",
+    "base_grade",
+    "final_grade",
+    "penalty_applied",
+    "penalty_rule"
+  ],
+  "properties": {
+    "total_samples": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "测试集记录数"
+    },
+    "unique_idx": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "测试集唯一 idx 数"
+    },
+    "pairs_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "按相邻记录切分出的总配对数"
+    },
+    "pairs_evaluated": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "漏洞版与修复版都有预测、真正计入统计的配对数"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["P-C", "P-V", "P-B", "P-R"],
+      "properties": {
+        "P-C": { "type": "integer", "minimum": 0 },
+        "P-V": { "type": "integer", "minimum": 0 },
+        "P-B": { "type": "integer", "minimum": 0 },
+        "P-R": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "base_grade": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"],
+      "description": "仅按 P-C 数量得到的等级"
+    },
+    "final_grade": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"],
+      "description": "应用 P-R 惩罚后的最终等级"
+    },
+    "penalty_applied": {
+      "type": "boolean",
+      "description": "P-R > P-C / 2 时为 true，等级下降一级（最低 D）"
+    },
+    "penalty_rule": {
+      "type": "string",
+      "description": "惩罚规则说明，便于报告复现"
+    }
+  }
+}
