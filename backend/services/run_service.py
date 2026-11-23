@@ -108,6 +108,11 @@ def run(
 
         run_id = f"{_stamp()}-{sample.idx}"
         trace = TraceWriter(run_id, trace_path)
+        locate_path = (
+            meta.get("locate_path")
+            if meta.get("locate_status") == "found"
+            else None
+        )
         outcome = run_agent(
             sample=sample,
             guard=guard,
@@ -115,6 +120,7 @@ def run(
             settings=settings,
             trace=trace,
             snapshot_display=display_path(snapshot_dir),
+            locate_path=locate_path,
         )
 
         runs.append(
@@ -124,6 +130,7 @@ def run(
                 "run_id": outcome.run_id,
                 "snapshot_dir": display_path(snapshot_dir),
                 "method": meta.get("method"),
+                "locate_path": locate_path,
                 "requested_commit": meta.get("requested_commit"),
                 "resolved_commit": meta.get("resolved_commit"),
                 "verdict": outcome.verdict,

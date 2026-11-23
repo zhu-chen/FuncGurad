@@ -117,9 +117,9 @@ def _tool_message(result: ToolResult, max_chars: int) -> str:
     if isinstance(data, dict):
         compact = dict(data)
         if isinstance(compact.get("matches"), list):
-            compact["matches"] = compact["matches"][:10]
+            compact["matches"] = compact["matches"][:20]
         if isinstance(compact.get("lines"), list):
-            compact["lines"] = compact["lines"][:150]
+            compact["lines"] = compact["lines"][:300]
         compact["truncated_for_llm"] = len(
             json.dumps(data, ensure_ascii=False)
         ) > max_chars
@@ -134,7 +134,7 @@ def _tool_message(result: ToolResult, max_chars: int) -> str:
 
 
 def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:
-    return {
+    message: dict[str, Any] = {
         "role": "assistant",
         "content": turn.content,
         "tool_calls": [
@@ -149,6 +149,11 @@ def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:
             for call in turn.tool_calls
         ],
     }
+    # GLM 交错思考要求把上一轮的 reasoning_content 原样带回，
+    # 否则工具结果之后会丢失推理上下文。
+    if turn.reasoning_content:
+        message["reasoning_content"] = turn.reasoning_content
+    return message
 
 
 def _outcome(
@@ -193,6 +198,7 @@ def run_agent(
     settings: AgentSettings,
     trace: TraceWriter,
     snapshot_display: str,
+    locate_path: str | None = None,
 ) -> AgentOutcome:
     """运行一次自主循环；模型自己决定何时调用工具、何时收尾。"""
     deadline = time.monotonic() + settings.timeout_seconds
@@ -205,6 +211,7 @@ def run_agent(
                 sample.commit_url,
                 sample.func,
                 snapshot_display,
+                locate_path=locate_path,
             ),
         },
     ]
@@ -243,11 +250,35 @@ def run_agent(
 
         steps = step
         llm_steps += 1
+        final_step = step >= settings.max_steps
+        if final_step:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "已达到步数上限。现在禁止调用工具，请立即只输出最终 JSON 对象："
+                        '{"verdict":"vulnerable"或"benign","reason":"...",'
+                        '"evidence":[{"path":"...","line":0,"note":"..."}]}。'
+                        "即使证据不足也按 benign 输出，不要再展开分析。"
+                    ),
+                }
+            )
+        elif step == settings.max_steps - 1:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "这是最后一次工具调用机会；下一步必须输出最终 JSON，"
+                        "不要继续展开长篇分析。"
+                    ),
+                }
+            )
+        active_tools = [] if final_step else TOOL_SCHEMAS
         started = time.perf_counter()
         try:
             turn = provider.complete(
                 messages,
-                TOOL_SCHEMAS,
+                active_tools,
                 min(int(remaining), settings.request_timeout_seconds),
             )
         except ProviderError as exc:
@@ -259,20 +290,37 @@ def run_agent(
             )
             break
 
+        llm_payload: dict[str, Any] = {
+            "step": step,
+            "finalizing": final_step,
+            "content": turn.content[:2000],
+            "tool_calls": [
+                {"name": call.name, "arguments": call.arguments}
+                for call in turn.tool_calls
+            ],
+        }
+        if turn.reasoning_content:
+            llm_payload["reasoning_content"] = turn.reasoning_content[:2000]
+        usage = (turn.raw or {}).get("usage")
+        if usage:
+            llm_payload["usage"] = usage
         trace.emit(
             "llm_step",
-            payload={
-                "step": step,
-                "content": turn.content[:2000],
-                "tool_calls": [
-                    {"name": call.name, "arguments": call.arguments}
-                    for call in turn.tool_calls
-                ],
-            },
+            payload=llm_payload,
             duration_ms=(time.perf_counter() - started) * 1000,
         )
 
-        if turn.tool_calls:
+        if turn.tool_calls and final_step:
+            trace.emit(
+                "error",
+                payload={
+                    "step": step,
+                    "reason": "tool_call_on_final_step",
+                    "tools": [call.name for call in turn.tool_calls],
+                },
+            )
+
+        if turn.tool_calls and not final_step:
             messages.append(_assistant_message(turn))
             for call in turn.tool_calls:
                 if deadline - time.monotonic() <= 0:

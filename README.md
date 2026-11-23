@@ -11,12 +11,12 @@
 | 仓库骨架与 JSON 契约 | 已完成 | 六个契约（Sample / ResultRecord / EvalReport / RepoSnapshot / KnowledgeHit / TraceEvent）与评测基线 |
 | 仓库快照与函数定位 | 已完成 | 原生 git 克隆、父提交解析、快照导出、文本定位 v1；已用 6 条样本验证 |
 | Agent 闭环 | 已完成 | 自主循环 + 四个只读工具（含知识检索）+ 证据门控；`result.jsonl` 严格只含 `idx` 与 `prediction` |
-| 图形界面与后端接口 | 已完成（stub） | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
+| 图形界面与后端接口 | 已完成 | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
 | 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
-| 真实模型接入 | 未接入 | 当前没有模型 key，自动回退到确定性 stub provider |
-| 全量评测 | 未执行 | 只验证了 1 对样本（idx 194989 / 218785），尚未跑 300 条全量 |
+| 真实模型接入 | 已完成（需本地 key） | 已接入 GLM-5.3-Flash（智谱 OpenAI 兼容接口）；未配置 key 时自动回退 stub |
+| 全量评测 | 进行中 | 300 条全量评测已启动（`scripts/run_full_eval.py`，断点续跑）；结果待汇总 |
 
-> 当前所有检测结论均由 stub provider 生成，只用于验证链路，**不代表真实检测能力**。
+> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测正在后台运行，完成后再更新 P-C/P-V/P-B/P-R 与等级。
 
 ## 快速开始
 
@@ -24,11 +24,19 @@
 
 ```powershell
 python -m pip install -r requirements.txt
+
+# 配置真实模型（一次性）：复制模板并填入自己的 API Key
+Copy-Item .env.example .env.local
+# 编辑 .env.local，至少设置 FUNCGUARD_LLM_API_KEY
+
+python -m backend.cli check      # 应显示 provider: openai-compatible, is_stub=False
 python -m backend.server --open
 ```
 
-启动后浏览器会打开 `http://127.0.0.1:8000`，界面顶部会标注“占位模型”。
+启动后浏览器会打开 `http://127.0.0.1:8000`。配置了真实模型时界面使用 GLM-5.3-Flash；未配置 key 时自动回退到确定性 stub，界面顶部会标注“占位模型”。
 
+> `.env.local` 已被 `.gitignore` 忽略，不会进入 git。真实环境变量的优先级高于文件内容。
+>
 > 没有本地数据时首页仍可打开，但运行会提示缺少数据（HTTP 503），不会静默失败。
 
 前端已构建并入库（`web/dist`），无需 `npm install` 即可使用。需要修改前端时再执行：
@@ -39,20 +47,40 @@ npm install
 npm run dev
 ```
 
+## 真实模型配置
+
+默认接入智谱开放平台的 OpenAI 兼容模型接口：
+
+| 配置 | 默认值 |
+|---|---|
+| Base URL | `https://open.bigmodel.cn/api/paas/v4` |
+| Model | `glm-5.3-flash` |
+| Key 环境变量 | `FUNCGUARD_LLM_API_KEY`（也支持 `ZAI_API_KEY` / `ZHIPUAI_API_KEY` / `OPENAI_API_KEY`） |
+| 最大输出 | 4096 tokens（`FUNCGUARD_LLM_MAX_TOKENS`） |
+| 单样本总超时 | 300 s（`FUNCGUARD_AGENT_TIMEOUT`） |
+| 单次模型请求超时 | 120 s（`FUNCGUARD_LLM_TIMEOUT`） |
+
+- 启动时自动读取仓库根目录的 `.env.local` 与 `.env`，真实环境变量优先；这两个文件不入库。
+- `FUNCGUARD_LLM_PROVIDER=auto`（默认）：有 key 时使用真实模型，无 key 时回退 stub；设为 `zhipu` / `openai` / `glm` 时缺少 key 会直接报错。
+- provider 使用 OpenAI Chat Completions + function calling 协议，模型在本地 Agent 循环中调用四个只读工具，最终结论仍经过证据门控。
+- **模型接入已完成**：配置 key 后 provider 会直接调用 `glm-5.3-flash`，支持 function calling 与完整 Agent 闭环。
+- 注意：`https://agent-api.bigmodel.cn/api/agent/managed` 是智谱 **Managed Agents（云端托管 Agent）** 的地址，只提供 `/v1/agents`、`/v1/sessions`、`/v1/environments` 等路由，不是模型对话接口。本次没有接入 Managed Agents 这一产品形态；本项目保留本地 Agent 循环，因此使用同一账号下的标准模型 API。如果以后要改用 Managed Agents，需要新增 session/SSE 执行链路，详见 [P6 交接文档](docs/handoff/2026-11-23-p6-real-model.md)。
+
 ## 运行前准备
 
 以下数据是本地课程数据，**不入库**，需要自行生成或从课程材料获取：
 
 | 路径 | 内容 |
 |---|---|
-| `cache/dataset/test.jsonl` | 300 条测试样本（150 对） |
+| `dataset/` | 课程材料解压目录（已 gitignore）：`test.jsonl`、`knowledge.jsonl`、`evaluation.py`、示例结果 |
+| `cache/dataset/test.jsonl` | 可选：默认路径副本；也可直接用 `--dataset dataset/test.jsonl` |
 | `cache/meta/samples/*.json` | 每个 idx 的快照元数据（含 `snapshot_dir`） |
 | `cache/snapshots/*` | 只读仓库快照，供 Agent 工具检索 |
-| `knowledge.jsonl`（仓库外） | 历史 CVE 知识库，用于构建检索索引 |
+| `knowledge.jsonl`（仓库外或 `dataset/`） | 历史 CVE 知识库，用于构建检索索引 |
 
 准备方式：
 
-1. 从课程材料获取 `test.jsonl`，放到 `cache/dataset/test.jsonl`。
+1. 从课程材料获取 `dataset/`（至少包含 `test.jsonl`）。CLI 可直接用 `--dataset dataset/test.jsonl`；如果要使用默认路径，复制到 `cache/dataset/test.jsonl`。
 2. 按 [P2 交接文档](docs/handoff/2026-11-22-p2-snapshot.md) 的流程生成快照与元数据，例如：
    `python -m repo_service.prepare --only-idx 194989 --only-idx 218785`
 3. 运行数据自检：
@@ -72,6 +100,20 @@ $env:FUNCGUARD_GIT_PROXY = "http://127.0.0.1:7897"
 ```
 
 该变量同时用于 git 快照链路与模型请求；不设置时不走代理。模型请求也可单独用 `FUNCGUARD_LLM_PROXY` 覆盖。
+
+## 全量评测
+
+数据就绪后，使用可断点续跑的驱动：
+
+```powershell
+python scripts/run_full_eval.py --cache D:\FuncGuardCache
+```
+
+- 按仓库分组准备快照，跑完一个仓库后删除该仓库的快照与 git 克隆，避免 TensorFlow 等大仓库占满磁盘。
+- 每跑完一个样本就原子写入 `predictions.jsonl` / `status.jsonl`；中断后重跑会跳过已完成样本。
+- 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `D:\FuncGuardCache\eval\`：
+  `full-result.jsonl`、`eval-report.json`、`official-evaluation.txt`、`summary.json`、`run.log`。
+- 建议把 `--cache` 放在空间充足的盘；快照是 Git 归档的完整源码树，单个大仓库可能占用数十 GB。
 
 ## 知识库检索
 
@@ -108,6 +150,8 @@ python -m knowledge.audit_leakage --cards --threshold 0.5
 | `knowledge/` | 知识库脚本：泄漏审计 |
 | `rag/` | 知识卡片、BM25 索引、检索接口与自测 |
 | `docs/handoff/` | 各里程碑交接文档 |
+| `scripts/` | 运维/评测脚本：`run_full_eval.py` 全量评测驱动 |
+| `.env.example` | 模型与代理配置模板；复制为 `.env.local` 后生效 |
 | `cache/` | 本地缓存与运行产物，不入库 |
 
 ## 交接文档

@@ -229,3 +229,12 @@ cache/
 # P5 前端构建产物：仓库内保留 dist 以支持免构建启动
 !web/dist/
 !web/dist/**
+
+# Local secrets and machine-specific config (never commit)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# 课程数据（本地，不入库）
+dataset/

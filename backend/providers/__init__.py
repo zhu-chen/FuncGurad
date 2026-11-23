@@ -21,16 +21,20 @@ def create_provider(settings: AgentSettings) -> tuple[Provider, str | None]:
             model=settings.model,
             temperature=settings.temperature,
             proxy=settings.proxy,
+            max_tokens=settings.max_tokens,
+            stream=settings.stream,
+            reasoning_effort=settings.reasoning_effort,
+            retries=settings.retries,
         )
         return provider, None
 
-    if mode == "openai":
+    if mode in ("openai", "zhipu", "glm"):
         raise ProviderError(
-            "FUNCGUARD_LLM_PROVIDER=openai 但未设置 "
-            "FUNCGUARD_LLM_API_KEY / OPENAI_API_KEY"
+            f"FUNCGUARD_LLM_PROVIDER={mode} 但未设置 API key；请在 .env.local 或环境变量中配置 "
+            "FUNCGUARD_LLM_API_KEY（也支持 ZAI_API_KEY / ZHIPUAI_API_KEY / OPENAI_API_KEY）"
         )
 
     return StubProvider(), (
-        "未检测到 FUNCGUARD_LLM_API_KEY / OPENAI_API_KEY，"
-        "已回退到确定性 stub provider。"
+        "未检测到模型 API key（FUNCGUARD_LLM_API_KEY / ZAI_API_KEY / "
+        "ZHIPUAI_API_KEY / OPENAI_API_KEY），已回退到确定性 stub provider。"
     )

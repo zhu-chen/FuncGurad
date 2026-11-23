@@ -21,6 +21,7 @@ class ToolCall:
 class AssistantTurn:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    reasoning_content: str = ""
     raw: dict[str, Any] | None = None
 
 

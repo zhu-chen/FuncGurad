@@ -60,7 +60,10 @@ def _describe_tool(call: dict[str, Any]) -> str:
 def _print_summary(payload: dict[str, Any]) -> None:
     provider = payload["provider"]
     print("=== P4 Agent 运行摘要 ===")
-    print(f"provider: {provider['name']} (is_stub={provider['is_stub']})")
+    print(
+        f"provider: {provider['name']} (is_stub={provider['is_stub']}, "
+        f"model={provider.get('model')}, base_url={provider.get('base_url')})"
+    )
     if provider.get("fallback_reason"):
         print(f"回退原因: {provider['fallback_reason']}")
     print(f"工具: {', '.join(provider['tools'])}")
@@ -152,9 +155,15 @@ def _check_data() -> int:
 
     try:
         provider, fallback = create_provider(AgentSettings.from_env())
-        print(f"[OK] provider: {provider.name}（is_stub={provider.is_stub}）")
+        print(
+            f"[OK] provider: {provider.name}（is_stub={provider.is_stub}, "
+            f"model={getattr(provider, 'model', None)}, "
+            f"base_url={getattr(provider, 'base_url', None)}）"
+        )
         if fallback:
             print(f"       回退原因: {fallback}")
+        if not provider.is_stub:
+            print("       真实模型已接入（key 来自环境变量或 .env.local）。")
     except ProviderError as exc:
         problems += 1
         print(f"[错误] provider: {exc}")

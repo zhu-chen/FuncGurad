@@ -10,6 +10,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from repo_service.env import load_env_file
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -47,6 +49,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_env_file()
         cache_dir = Path(
             os.getenv("FUNCGUARD_CACHE_DIR", str(REPO_ROOT / "cache"))
         ).resolve()
