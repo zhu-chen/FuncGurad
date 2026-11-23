@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +17,7 @@ from backend.api.job_service import JobError, JobService
 from backend.config import AgentSettings
 from backend.providers.base import ProviderError
 from backend.services.sample_service import SampleServiceError
+from rag.retriever import KnowledgeIndexError, get_retriever
 from repo_service.config import REPO_ROOT
 
 
@@ -168,6 +169,19 @@ def create_app() -> FastAPI:
     @app.get("/api/batches/{batch_id}")
     def get_batch(batch_id: str) -> JSONResponse:
         return _ok(jobs.get_batch(batch_id))
+
+    @app.get("/api/knowledge/search")
+    def search_knowledge(
+        q: str = Query(..., min_length=1, description="检索词"),
+        top_k: int = Query(5, ge=1, le=20, description="返回条数"),
+        project: Optional[str] = Query(None, description="按项目过滤"),
+        cwe: Optional[str] = Query(None, description="按 CWE 过滤，例如 CWE-787"),
+    ) -> JSONResponse:
+        try:
+            result = get_retriever().search(q, top_k=top_k, project=project, cwe=cwe)
+        except KnowledgeIndexError as exc:
+            return _error(503, str(exc), "knowledge_not_ready")
+        return _ok(result)
 
     dist_dir = REPO_ROOT / "web" / "dist"
     assets_dir = dist_dir / "assets"

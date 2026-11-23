@@ -22,6 +22,14 @@ const expanded = ref(new Set())
 const toast = ref('')
 const timelineEl = ref(null)
 
+const kbQuery = ref('')
+const kbProject = ref('')
+const kbCwe = ref('')
+const kbTopK = ref('5')
+const kbLoading = ref(false)
+const kbResult = ref(null)
+const kbError = ref('')
+
 let runTimer = null
 let batchTimer = null
 let toastTimer = null
@@ -367,6 +375,29 @@ async function submitBatch() {
   }
 }
 
+async function searchKnowledge() {
+  const query = kbQuery.value.trim()
+  if (!query) {
+    showToast('请输入知识库检索词')
+    return
+  }
+  kbLoading.value = true
+  kbError.value = ''
+  try {
+    kbResult.value = await api.knowledgeSearch(query, {
+      topK: Number(kbTopK.value) || 5,
+      project: kbProject.value.trim(),
+      cwe: kbCwe.value.trim(),
+    })
+  } catch (error) {
+    kbResult.value = null
+    kbError.value = error instanceof ApiError ? error.message : String(error)
+    fail(error)
+  } finally {
+    kbLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadHealth()
   loadPairs()
@@ -628,6 +659,55 @@ onBeforeUnmount(() => {
             <pre>{{ pretty(report) }}</pre>
           </details>
         </template>
+      </section>
+
+      <section class="panel knowledge-panel">
+        <div class="panel-head">
+          <h2>4. 知识库检索</h2>
+          <span v-if="kbResult" class="mono small">
+            {{ kbResult.retriever }} · {{ kbResult.elapsed_ms }}ms ·
+            {{ kbResult.candidates }} 候选
+          </span>
+        </div>
+
+        <div class="row">
+          <input
+            v-model="kbQuery"
+            placeholder="漏洞现象或代码关键词，例如 整数溢出 长度校验缺失"
+            @keyup.enter="searchKnowledge"
+          />
+          <button class="primary" :disabled="kbLoading" @click="searchKnowledge">
+            {{ kbLoading ? '检索中…' : '检索' }}
+          </button>
+        </div>
+
+        <div class="kb-filters">
+          <input v-model="kbProject" placeholder="项目过滤（可选），如 openssl" />
+          <input v-model="kbCwe" placeholder="CWE 过滤（可选），如 CWE-787" />
+          <input v-model="kbTopK" type="number" min="1" max="20" title="返回条数" />
+        </div>
+
+        <div v-if="kbError" class="kb-error">{{ kbError }}</div>
+        <div v-else-if="!kbResult" class="empty">
+          检索历史 CVE 卡片，查看项目、漏洞类型与相似度；Agent 也可通过
+          search_knowledge 工具自主调用。
+        </div>
+        <ul v-else-if="kbResult.hits.length" class="kb-list">
+          <li v-for="hit in kbResult.hits" :key="hit.ref">
+            <div class="kb-head">
+              <strong>{{ hit.cve || '无 CVE 编号' }}</strong>
+              <span class="badge">{{ hit.project }}</span>
+              <span class="kb-score">{{ hit.score.toFixed(2) }}</span>
+            </div>
+            <p class="small mono">{{ hit.func_signature || '（无函数签名）' }}</p>
+            <p class="kb-summary">{{ hit.summary }}</p>
+            <p class="small">
+              {{ hit.cwe.join(', ') || '未标注 CWE' }} · {{ hit.ref }} ·
+              {{ hit.retriever }}
+            </p>
+          </li>
+        </ul>
+        <div v-else class="empty">没有命中，换个关键词或放宽过滤条件。</div>
       </section>
     </main>
 

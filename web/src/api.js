@@ -81,4 +81,10 @@ export const api = {
     request('/batches', { method: 'POST', body: { idx_list: idxList, pair } }),
   getBatch: (batchId) =>
     request(`/batches/${encodeURIComponent(batchId)}`),
+  knowledgeSearch: (q, { topK = 5, project = '', cwe = '' } = {}) => {
+    const params = new URLSearchParams({ q, top_k: String(topK) })
+    if (project) params.set('project', project)
+    if (cwe) params.set('cwe', cwe)
+    return request(`/knowledge/search?${params.toString()}`)
+  },
 }
