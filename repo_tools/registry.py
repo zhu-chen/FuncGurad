@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable
 
-from repo_tools import find_files, grep_content, read_file
+from repo_tools import find_files, grep_content, read_file, search_knowledge
 from repo_tools.base import SnapshotGuard, ToolError, ToolResult
 
 Handler = Callable[[SnapshotGuard, dict], dict]
@@ -14,6 +14,7 @@ _HANDLERS: dict[str, Handler] = {
     "grep_content": grep_content.run,
     "find_files": find_files.run,
     "read_file": read_file.run,
+    "search_knowledge": search_knowledge.run,
 }
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
@@ -128,6 +129,42 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": (
+                "检索历史 CVE 知识库，返回相似漏洞案例的编号、项目、漏洞类型与摘要。"
+                "用于在判断前参考历史上同类漏洞的成因与修复方式；"
+                "知识库只含已公开案例，不包含当前测试样本的答案。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "漏洞现象或代码关键词，例如 缓冲区长度检查缺失",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "返回条数，默认 5",
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "可选，按知识库项目名过滤，例如 openssl",
+                    },
+                    "cwe": {
+                        "type": "string",
+                        "description": "可选，按漏洞类型过滤，例如 CWE-787",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -196,6 +233,14 @@ def summarize(result: ToolResult) -> dict[str, Any]:
         summary["start_line"] = data.get("start_line")
         summary["end_line"] = data.get("end_line")
         summary["total_lines"] = data.get("total_lines")
+    elif result.tool == "search_knowledge" and result.ok:
+        hits = data.get("hits") or []
+        summary["total_matches"] = len(hits)
+        summary["hits"] = [
+            {"ref": item.get("ref"), "cve": item.get("cve"), "score": item.get("score")}
+            for item in hits[:3]
+        ]
+        summary["elapsed_ms"] = data.get("elapsed_ms")
 
     if result.error:
         summary["error"] = result.error
