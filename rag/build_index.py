@@ -43,17 +43,55 @@ def _detect_vector_backend() -> dict[str, object]:
     return {"enabled": False, "reason": reason}
 
 
-def _load_leakage_exclusions(out_dir: Path) -> tuple[set[int], Path | None]:
-    """读取审计结果里与测试集高相似的 knowledge idx，默认从索引中剔除。"""
+def _read_audit_idxs(path: Path) -> tuple[set[int], float | None]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    near = payload["checks"]["near_duplicate"]
+    idxs = payload.get("excluded_knowledge_idxs")
+    if not idxs:
+        idxs = near.get("excluded_knowledge_idxs") or near.get(
+            "high_similarity_knowledge_idxs", []
+        )
+    threshold = payload.get("threshold") or near.get("threshold")
+    return {int(idx) for idx in idxs}, threshold
+
+
+def _load_leakage_exclusions(
+    out_dir: Path,
+) -> tuple[set[int], Path | None, float | None, Path | None]:
+    """读取审计结果里与测试集近似的 knowledge idx，默认从索引中剔除。
+
+    严格口径下审计脚本会枚举所有 ≥threshold 的配对，并把涉及的 idx 写入
+    `excluded_knowledge_idxs`；`high_similarity_knowledge_idxs` 保留为兼容别名。
+    若已存在卡片残余审计（leakage-audit-cards.json），把残余命中一并剔除，
+    使最终索引达到「任意卡片与测试样本 < 阈值」的不动点。
+    """
     audit_path = out_dir / "audit" / "leakage-audit.json"
+    cards_audit_path = out_dir / "audit" / "leakage-audit-cards.json"
     if not audit_path.exists():
-        return set(), None
+        return set(), None, None, None
     try:
-        payload = json.loads(audit_path.read_text(encoding="utf-8"))
-        idxs = payload["checks"]["near_duplicate"]["high_similarity_knowledge_idxs"]
+        idxs, threshold = _read_audit_idxs(audit_path)
     except (json.JSONDecodeError, KeyError, TypeError):
-        return set(), audit_path
-    return {int(idx) for idx in idxs}, audit_path
+        return set(), audit_path, None, None
+
+    cards_idxs: set[int] = set()
+    cards_used: Path | None = None
+    if cards_audit_path.exists():
+        try:
+            cards_idxs, cards_threshold = _read_audit_idxs(cards_audit_path)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            cards_idxs = set()
+        else:
+            if threshold is None or cards_threshold == threshold:
+                cards_used = cards_audit_path
+            else:
+                print(
+                    f"!! 卡片审计阈值 {cards_threshold} 与知识库审计阈值 {threshold} 不一致，"
+                    "忽略卡片审计结果",
+                    file=sys.stderr,
+                )
+                cards_idxs = set()
+    return idxs | cards_idxs, audit_path, threshold, cards_used
 
 
 def build(
@@ -77,12 +115,22 @@ def build(
 
     excluded_idxs: set[int] = set()
     audit_path: Path | None = None
+    cards_audit_path: Path | None = None
+    threshold: float | None = None
     if not include_leaky:
-        excluded_idxs, audit_path = _load_leakage_exclusions(out_dir)
+        excluded_idxs, audit_path, threshold, cards_audit_path = _load_leakage_exclusions(
+            out_dir
+        )
         if audit_path is None:
             print(
                 "!! 未找到 cache/knowledge/audit/leakage-audit.json，"
-                "本次不剔除高相似知识条目；建议先运行 python -m knowledge.audit_leakage",
+                "本次不剔除近似知识条目；建议先运行 python -m knowledge.audit_leakage",
+                file=sys.stderr,
+            )
+        elif threshold is None:
+            print(
+                "!! 审计结果缺少阈值信息，可能是旧版本产物；"
+                "请重新运行 python -m knowledge.audit_leakage",
                 file=sys.stderr,
             )
 
@@ -124,9 +172,11 @@ def build(
         "leakage_filter": {
             "applied": not include_leaky,
             "audit_file": display_path(audit_path) if audit_path else None,
-            "threshold_containment": 0.8,
+            "cards_audit_file": display_path(cards_audit_path) if cards_audit_path else None,
+            "threshold_containment": threshold,
             "excluded": excluded_count,
-            "excluded_idxs": sorted(excluded_idxs)[:50],
+            "excluded_total_idxs": len(excluded_idxs),
+            "excluded_idxs": sorted(excluded_idxs)[:100],
         },
         "retriever": "bm25",
         "index": {**index.stats(), "bytes": bm25_path.stat().st_size},
@@ -158,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-leaky",
         action="store_true",
-        help="保留与测试集高相似（包含度≥0.8）的知识条目；默认剔除",
+        help="保留审计判定为泄漏的知识条目；默认剔除（阈值由审计结果决定，默认 0.5）",
     )
     args = parser.parse_args(argv)
 

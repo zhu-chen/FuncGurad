@@ -12,7 +12,7 @@
 | 仓库快照与函数定位 | 已完成 | 原生 git 克隆、父提交解析、快照导出、文本定位 v1；已用 6 条样本验证 |
 | Agent 闭环 | 已完成 | 自主循环 + 四个只读工具（含知识检索）+ 证据门控；`result.jsonl` 严格只含 `idx` 与 `prediction` |
 | 图形界面与后端接口 | 已完成（stub） | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
-| 知识库 / RAG | 已完成（BM25） | 泄漏审计 + 知识卡片 + 纯 Python BM25；7,560 条入索引，单次检索约 20 ms；无向量检索 |
+| 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
 | 真实模型接入 | 未接入 | 当前没有模型 key，自动回退到确定性 stub provider |
 | 全量评测 | 未执行 | 只验证了 1 对样本（idx 194989 / 218785），尚未跑 300 条全量 |
 
@@ -79,12 +79,15 @@ $env:FUNCGUARD_GIT_PROXY = "http://127.0.0.1:7897"
 
 ```powershell
 $env:FUNCGUARD_KNOWLEDGE_PATH = "<knowledge.jsonl 路径>"
-python -m knowledge.audit_leakage --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH
+python -m knowledge.audit_leakage --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH --threshold 0.5
 python -m rag.build_index --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH
+python -m knowledge.audit_leakage --cards --threshold 0.5
 ```
 
-- 审计必须先跑：build 会剔除与测试集函数包含度 ≥0.8 的知识记录，避免检索泄漏答案。
-- 单次构建约 12 s，缓存约 37 MB；重建索引后需重启服务。
+- 审计必须先跑：build 会剔除与任一测试样本函数包含度 ≥0.5 的知识记录，以及测试函数
+  注释提到、知识库同编号 CVE 的记录；当前从 7,574 条唯一卡片中剔除 77 条，入索引 7,497 条。
+- 建完索引后再跑一次卡片审计，残余应为 0 对；`--include-leaky` 只用于研究，评测/演示禁用。
+- 单次构建约 16 s，缓存约 37 MB；重建索引后需重启服务。
 - 使用入口：界面“4. 知识库检索”面板；`GET /api/knowledge/search?q=...&top_k=5&project=...&cwe=...`；Agent 工具 `search_knowledge`。
 - 未构建索引时检索接口返回 503，不影响单条样本运行。
 
