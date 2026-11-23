@@ -37,6 +37,43 @@ def pick_cases(cards: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     return [eligible[int(index * step)] for index in range(limit)]
 
 
+CASE_FIELDS = (
+    "source_idx",
+    "ref",
+    "cve",
+    "project",
+    "cve_desc",
+    "commit_message",
+    "func_signature",
+)
+
+
+def load_cases_file(path: Path) -> list[dict[str, Any]]:
+    """加载固定案例文件（JSON 列表），用于收紧前后同一批 query 复测。"""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise SystemExit(f"案例文件格式错误，需要 JSON 列表：{path}")
+    cases: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict) or "source_idx" not in item:
+            continue
+        cases.append({key: item.get(key) for key in CASE_FIELDS})
+    if not cases:
+        raise SystemExit(f"案例文件为空或缺少 source_idx：{path}")
+    cases.sort(key=lambda item: item["source_idx"])
+    return cases
+
+
+def pick_cases_by_idx(
+    cards: list[dict[str, Any]], case_idxs: list[int]
+) -> list[dict[str, Any]]:
+    """按给定 idx 取案例；索引中已不存在的 idx 会被跳过（另行报告）。"""
+    wanted = set(case_idxs)
+    cases = [card for card in cards if card["source_idx"] in wanted]
+    cases.sort(key=lambda item: item["source_idx"])
+    return cases
+
+
 def pick_negative(
     cards: list[dict[str, Any]], target: dict[str, Any], used: set[int]
 ) -> dict[str, Any] | None:
@@ -54,12 +91,31 @@ def pick_negative(
     return None
 
 
-def run_selftest(index_dir: Path, sample_size: int, top_k: int) -> dict[str, Any]:
+def run_selftest(
+    index_dir: Path,
+    sample_size: int,
+    top_k: int,
+    case_idxs: list[int] | None = None,
+    cases_file: Path | None = None,
+) -> dict[str, Any]:
     retriever = KnowledgeRetriever(index_dir)
     cards = retriever.cards
-    cases = pick_cases(cards, sample_size)
+    cards_source = "index"
+    if cases_file is not None:
+        cases = load_cases_file(cases_file)
+        cards_source = f"file:{Path(cases_file).name}"
+    elif case_idxs:
+        cases = pick_cases_by_idx(cards, case_idxs)
+        cards_source = "case_idxs"
+    else:
+        cases = pick_cases(cards, sample_size)
     if not cases:
         raise SystemExit("知识库中没有可用于自测的卡片（需要 cve 与非空 cve_desc）")
+
+    index_idxs = {card["source_idx"] for card in cards}
+    missing_cases = [
+        case["source_idx"] for case in cases if case["source_idx"] not in index_idxs
+    ]
 
     used = {card["source_idx"] for card in cases}
     positive_hits = 0
@@ -156,6 +212,8 @@ def run_selftest(index_dir: Path, sample_size: int, top_k: int) -> dict[str, Any
         "index_dir": str(index_dir),
         "retriever": "bm25",
         "top_k": top_k,
+        "cases_source": cards_source,
+        "cases_missing_from_index": missing_cases,
         "positive": {
             "cases": len(cases),
             "cve_top3_hits": positive_hits,
@@ -201,6 +259,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         f"- 生成时间：{report['generated_at']}",
         f"- 索引：`{report['index_dir']}`（{report['retriever']}）",
+        f"- 案例来源：{report.get('cases_source', 'index')}；"
+        f"已从索引剔除的案例：{len(report.get('cases_missing_from_index') or [])} 条",
         f"- 正例：{positive['cases']} 条；负例：{negative['cases']} 条；top_k={report['top_k']}",
         "",
         "## 指标",
@@ -287,11 +347,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", type=int, default=40)
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument(
+        "--case-idxs",
+        default="",
+        help="固定案例 source_idx，逗号分隔；用于收紧前后同一批 query 对比",
+    )
+    parser.add_argument(
+        "--cases-file",
+        type=Path,
+        default=None,
+        help="固定案例 JSON 文件（含 source_idx/cve/project/cve_desc 等字段）",
+    )
+    parser.add_argument(
         "--out", type=Path, default=REPO_ROOT / "cache" / "knowledge" / "selftest"
     )
     args = parser.parse_args(argv)
 
-    report = run_selftest(Path(args.index_dir), args.samples, args.top_k)
+    case_idxs = [
+        int(part.strip()) for part in str(args.case_idxs).split(",") if part.strip()
+    ]
+    report = run_selftest(
+        Path(args.index_dir),
+        args.samples,
+        args.top_k,
+        case_idxs=case_idxs or None,
+        cases_file=args.cases_file,
+    )
     args.out.mkdir(parents=True, exist_ok=True)
     json_path = args.out / "selftest.json"
     md_path = args.out / "selftest.md"
@@ -316,6 +396,9 @@ def main(argv: list[str] | None = None) -> int:
         f"单次检索：中位数 {latency['median']}ms / P95 {latency['p95']}ms / "
         f"最大 {latency['max']}ms"
     )
+    missing = report.get("cases_missing_from_index") or []
+    if missing:
+        print(f"已从索引剔除的案例：{len(missing)} 条 → {missing[:10]}")
     probes = report["extra_probes"]
     print(
         f"额外探针：commit_message {probes['commit_message']['hits']}/"

@@ -1,236 +1,239 @@
-# 交接：P3 知识库与 RAG（feat/p3-rag）
+# 交接：P3 知识库与 RAG（feat/p3-rag，含 0.5 严格口径复核）
 
-- 分支：`feat/p3-rag`
+- 分支：`feat/p3-rag`（已由 PR #7 以 merge commit 合入 `main`）
 - 基线：`main` @ `38a3fc9`
-- 日期：2026-11-23
-- 范围：泄漏审计、知识卡片化、BM25 索引、检索接口与 Agent 工具、效果自测、界面入口
+- 日期：2026-11-23（严格口径复核同日完成）
+- 范围：泄漏审计、知识卡片、纯 Python BM25 索引、检索接口、Agent 工具、前端检索面板
+
+## 0. 一分钟接手
+
+### 0.1 本地数据
+
+| 数据 | 来源 | 路径 | 自检 | 缺失时的现象 |
+|---|---|---|---|---|
+| 测试集 300 条 / 150 对 | 课程材料 | `cache/dataset/test.jsonl` | `python -m backend.cli check` | `/api/health` 返回 `status=degraded`（HTTP 200、`ok=false`），单条/批量运行返回 503；首页顶部出现黄色的数据缺失横幅 |
+| 知识库 7,578 行 | 课程材料 | 仓库外，任意路径；用 `FUNCGUARD_KNOWLEDGE_PATH` 指向 | `python -m knowledge.audit_leakage --knowledge <路径>` | 无法建索引；已有索引时检索仍可用；没有索引时 `/api/knowledge/search` 返回 503 `knowledge_not_ready` |
+| 快照与元数据 | `python -m repo_service.prepare --only-idx <idx>` | `cache/meta/samples/*.json`、`cache/snapshots/*` | `python -m backend.cli check` | 单条运行在工具阶段报“找不到快照/文件” |
+| 知识索引 | `python -m knowledge.audit_leakage` + `python -m rag.build_index` | `cache/knowledge/` | 见 0.2 | 前端“4. 知识库检索”面板显示 503 提示；不影响单条样本运行 |
+| 前端构建产物 | 已入库 | `web/dist/` | 打开首页 | 缺失时首页 503，提示先 `npm run build` |
+
+`cache/` 全部不入库。换机器后必须重新审计与建索引，不能假设旧索引还在。
+
+### 0.2 从零跑通（PowerShell）
+
+```powershell
+python -m pip install -r requirements.txt
+python -m backend.cli check
+
+$env:FUNCGUARD_KNOWLEDGE_PATH = "<knowledge.jsonl 路径>"
+python -m knowledge.audit_leakage --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH --threshold 0.5
+python -m rag.build_index --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH
+python -m knowledge.audit_leakage --cards --threshold 0.5   # 残余应为 0 对
+
+python -m backend.server --open
+```
+
+### 0.3 环境坑（本机实测）
+
+1. **Python 版本**：要求 3.9+。本机默认 `python` 是 3.11.2，但没有 FastAPI/uvicorn；
+   带依赖的是 `D:\anaconda\python.exe`（3.9.13）。**审计/建索引/自测**用哪个解释器都行，
+   **起服务**要用装好依赖的那个。
+2. **PYTHONPATH 污染**：如果全局 `PYTHONPATH` 指向别的项目，venv 里会出现“包装了却
+   import 到别处”的假成功。先 `python -c "import sys; print(sys.path)"` 确认；必要时用
+   干净 venv，并显式用该 venv 的 `python -m pip install -r requirements.txt`。
+3. **代理**：访问 GitHub 或模型接口需要显式设置 `FUNCGUARD_GIT_PROXY=http://127.0.0.1:7897`；
+   不设置就不走代理。模型请求可单独用 `FUNCGUARD_LLM_PROXY` 覆盖。
+4. **索引更新后必须重启服务**：检索器在进程启动时加载 `cache/knowledge/`；重建索引后不重启
+   仍会返回旧结果或 503。
+5. **PowerShell 5**：不支持 heredoc、`&&`、`||`；多行 Python 写成临时 `.py` 文件再执行，
+   或用分号串联。变量名 `$home` 是只读的，脚本里换名。
+6. **控制台编码**：中文输出乱码时设置 `$env:PYTHONIOENCODING="utf-8"` 或 `chcp 65001`。
+7. **4,000 字符截断**：近似检测只比较函数前 4,000 个规范化字符；超长函数尾部不参与。
+
+### 0.4 当前真实完成度（先看这里）
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| 泄漏审计（idx / commit / 哈希 / 8-gram / CVE 文本） | **真实实现** | 阈值 0.5；剔除 77 条；最终卡片残余 0 对，最高包含度 0.4941 |
+| 知识卡片 | **真实实现** | 7,574 条唯一卡片（原始 7,578 行，重复 4，坏行 0），剔除后 **7,497** 条入索引 |
+| BM25 检索 | **真实实现** | 纯 Python，k1=1.5、b=0.75；107,767 词项、1,154,782 条倒排、11.6 MB |
+| `GET /api/knowledge/search` | **真实可用** | 实测 `candidates=7497`，单次 17.55 ms |
+| Agent 工具 `search_knowledge` | **已接入** | 注册在 `repo_tools/registry.py`，写 `repo_tool` 轨迹；未改 Agent 循环 |
+| 前端知识库检索面板 | **真实可用** | `web/dist` 已重建并入 main |
+| 向量检索 | **未实现** | 未安装 `sentence-transformers`，`manifest.retriever=bm25` 单路 |
+| 真实模型 | **未接入** | 无 key，自动回退确定性 stub；所有检测结论只验证链路 |
+| 300 条全量评测 | **未执行** | 只验证过 1 对样本（194989 / 218785） |
+| 泛化能力 | **未验证** | 自测正例 100% 是自检索上界（query 来自卡片自身 NVD 描述），不能当泛化指标 |
 
 ## 1. 范围与结论
 
-已完成从本地 `knowledge.jsonl` 到可检索知识库的整条链路，并接进 FastAPI 与 Agent 工具，没有改契约字段、Agent 循环和 P1/P2 脚本：
+已完成“知识库不进测试集 + 可检索 + 可被 Agent 调用”的闭环：
 
-- 泄漏审计：idx / commit / 规范化哈希均为 0 交集；函数内容层面发现 **25 对包含度 ≥0.8** 的近似记录，涉及 14 条知识记录，已默认从索引剔除。
-- 清洗卡片：7,578 行 → 7,574 条唯一卡片 → 剔除 14 条 → **7,560 条入索引**；坏行 0，重复 idx 4 条保留首条。
-- 检索：纯 Python BM25，中英文与驼峰/下划线分词；单次检索中位数 23 ms，P95 53 ms。
-- 接口：`GET /api/knowledge/search` 返回严格符合 `KnowledgeHit` 的命中；界面新增“4. 知识库检索”区域。
-- Agent：新增 `search_knowledge` 工具，工具调用写入 `trace.jsonl` 的 `repo_tool` 事件。
-- 效果自测：40 个已知案例，CVE 描述 query 的 top-3 命中 40/40（**自检索上界，不代表泛化能力**），同项目不同 CVE 负例误命中 1/39。
-
-一句话：BM25 单路已经可用，索引与接口都能复现；主要短板是没有向量检索、汇报里的 100% 是自检索数字、以及 0.5~0.8 的近似记录仍未处置。
+- 知识库 7,578 行 → 7,574 条唯一卡片 → 严格剔除 77 条 → **7,497 条入索引**。
+- 检索接口与 Agent 工具都按 `KnowledgeHit` 契约返回，字段不增不减。
+- 前端新增“4. 知识库检索”面板，只做展示与交互。
+- 实测：`/api/health` 200；`/api/knowledge/search?q=CVE-2014-9028...` 返回 3 条，
+  首条 `knowledge:404869`（flac / CVE-2014-9028），17.55 ms；首页 200。
 
 ## 2. 数据与产物
 
-### 2.1 数据源（本地，不入库）
+### 2.1 清洗与卡片化
 
-| 用途 | 路径 | 规模 |
+- 以 `idx` 去重，保留首条；坏行跳过。
+- 卡片字段：`source_idx`、`ref`、`project`、`cve`、`cwe`、`func_signature`、
+  `commit_message`、`cve_desc`、`func_excerpt`（原始函数前 4,000 字符）。
+- 汇总：7,578 行 → 7,574 张卡片；重复 4；坏行 0；最长函数截断到 4,000 字符。
+
+### 2.2 索引产物
+
+| 文件 | 大小 | 说明 |
 |---|---|---|
-| 知识库 | 课程材料中的 `knowledge.jsonl` | 52.5 MB / 7,578 行 / 3,266 个 CVE |
-| 测试集 | `cache/dataset/test.jsonl` | 300 行 / 150 对 |
+| `cache/knowledge/cards.jsonl` | 25.3 MiB | 7,497 条卡片（已剔除） |
+| `cache/knowledge/bm25.json` | 11.6 MB | 倒排、文档长度、词项统计 |
+| `cache/knowledge/manifest.json` | 2.1 KB | 源规模、剔除阈值与条数、构建耗时 |
+| `cache/knowledge/audit/` | ~0.15 MB | 知识库审计 + 最终卡片残余审计 |
+| `cache/knowledge/selftest/` | <0.01 MB | 自测报告与固定案例 |
 
-知识文件不在仓库内，通过 `--knowledge` 或环境变量 `FUNCGUARD_KNOWLEDGE_PATH` 传入。索引与产物全部写 `cache/knowledge/`，已被 `.gitignore` 的 `cache/` 规则忽略。
+建索引耗时（7,497 条）：卡片 0.78 s + 分词 11.72 s + 索引 3.58 s = **16.08 s**；
+缓存合计约 37 MB。
 
-### 2.2 清洗与卡片
+## 3. 检索与索引
 
-卡片字段（`cache/knowledge/cards.jsonl`，一行一条）：
-
-| 字段 | 说明 |
-|---|---|
-| `ref` / `source_idx` | `knowledge:<idx>` 与原始 idx |
-| `project` | 项目名，缺失记为 `unknown` |
-| `cve` / `cwe` | CVE 编号（大写）、CWE 列表 |
-| `commit_id` / `commit_url` | 修复提交 |
-| `commit_message` | 截断 600 字符 |
-| `func_signature` | 从函数体提取的签名，截断 200 字符 |
-| `func_excerpt` | 函数体，截断 4,000 字符 |
-| `cve_desc` | NVD 描述，截断 1,200 字符 |
-| `file_name` / `target` / `project_url` | 原样保留，缺失为 `null` |
-
-兜底规则：空字符串、`"None"`、`"null"` 统一视为空；`project` 缺失记 `unknown`；`cwe` 缺失为 `[]`；单条函数超长只截断不丢弃；JSON 坏行只计数不中断（本次 0 行）。
-
-### 2.3 缓存占用（实测）
-
-| 文件 | 大小 |
-|---|---|
-| `cards.jsonl` | 25.6 MiB（26,840,741 B） |
-| `bm25.json` | 11.7 MiB（12,242,172 B） |
-| `audit/leakage-audit.json` + `.md` | 约 10.8 KB |
-| `selftest/selftest.json` + `.md` | 约 2.3 KB |
-| 合计 | **37.3 MB** |
-
-## 3. 索引与检索
-
-### 3.1 为什么是 BM25
-
-本机没有可离线使用的 embedding 模型（`sentence-transformers` 未安装），按约定不联网下载权重，因此只做 BM25 单路。`manifest.json` 的 `vector` 字段会记录未启用原因；如后续配置 `FUNCGUARD_EMBEDDING_MODEL` 且安装依赖，可在此基础上加向量召回。
-
-### 3.2 分词与打分
-
-- 英文单词与代码标识符：先按非字母数字切分，再拆驼峰（`readResidualRice`）与下划线（`read_residual_rice`），全部小写。
-- 中文：连续汉字生成二元组，单字保留单字；语料主要是英文，中文 query 主要靠代码标识符命中。
-- 停用词：过滤 `the / and / with / allow` 等常见英文词。
-- BM25：`k1=1.5`、`b=0.75`；本次索引 108,287 个词项、1,167,558 条倒排、平均每条 467 个词。
-
-### 3.3 重建索引（含泄漏剔除）
-
-```powershell
-$env:FUNCGUARD_KNOWLEDGE_PATH = "<knowledge.jsonl 路径>"
-
-# 1) 审计：必须先跑，build 会读取审计结果剔除高相似条目
-python -m knowledge.audit_leakage --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH
-
-# 2) 清洗 + 分词 + BM25，产物写 cache/knowledge/
-python -m rag.build_index --knowledge $env:FUNCGUARD_KNOWLEDGE_PATH
-
-# 3) 可选：检索自测，报告写 cache/knowledge/selftest/
-python -m rag.selftest --samples 40 --top-k 3
-```
-
-- 不跑审计直接 build 会打印警告并保留全部条目；`--include-leaky` 可显式关闭剔除。
-- 索引是进程内单例，重建后需重启 `python -m backend.server`。
-- 换输出目录用 `--out` 或 `FUNCGUARD_KNOWLEDGE_DIR`。
-
-### 3.4 实测耗时
-
-| 阶段 | 耗时 |
-|---|---|
-| 泄漏审计 | 首次 30.77 s，复跑 10.16 s |
-| 清洗卡片 | 0.71 s |
-| 分词 | 8.64 s |
-| BM25 建索引并落盘 | 2.84 s |
-| **build 总计** | **12.19 s** |
-| 单次检索（热） | 中位数 23.15 ms / P95 53.3 ms / 最大 80.44 ms |
-| 首次工具调用（含加载 37 MB 缓存） | 约 1.24 s |
-
-环境：索引构建用 Python 3.11.2，服务与接口验证用 Python 3.9.13；索引是纯 JSON，两个版本互通。
+- 分词：英文按词、中文按双字、驼峰与下划线切分，统一小写；不依赖第三方库。
+- 打分：BM25（k1=1.5，b=0.75），返回原始分，不做归一化。
+- 过滤：`project` 精确匹配（忽略大小写），`cwe` 按 `CWE-xxx` 包含匹配。
+- 返回：`candidates`（参与打分的文档数）、`hits`（最多 `top_k` 条）、`elapsed_ms`。
+- 每条命中严格符合 `shared/contracts/knowledge_hit.schema.json`：
+  `ref` / `score` / `source_idx` / `project` / `cve` / `cwe` / `func_signature` /
+  `summary` / `retriever`，`additionalProperties=false`。
+- 索引缺失时抛 `KnowledgeIndexError`，接口返回 503 `knowledge_not_ready`。
 
 ## 4. 接口与 Agent 接入
 
-### 4.1 HTTP 接口
+### 4.1 HTTP
 
-`GET /api/knowledge/search`
+| 方法 | 路径 | 参数 | 说明 |
+|---|---|---|---|
+| GET | `/api/knowledge/search` | `q`（必填）、`top_k` 1~20、`project`、`cwe` | 知识检索 |
 
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `q` | 是 | 检索词，支持中英文与代码标识符 |
-| `top_k` | 否 | 1~20，默认 5 |
-| `project` | 否 | 项目名，大小写不敏感 |
-| `cwe` | 否 | 如 `CWE-787`，大小写不敏感 |
+调用示例：
 
-索引未构建时返回 503 和可读提示（`error.code = knowledge_not_ready`），不会 500。成功响应示例（真实返回，已截断）：
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/api/knowledge/search?q=CVE-2014-9028%20heap%20buffer%20overflow&top_k=3"
+```
+
+响应示例（实测）：
 
 ```json
 {
   "ok": true,
   "data": {
-    "query": "heap buffer overflow in image decoder",
-    "retriever": "bm25",
-    "top_k": 2,
-    "filters": {"project": null, "cwe": null},
-    "candidates": 7560,
+    "candidates": 7497,
+    "elapsed_ms": 17.55,
     "hits": [
-      {
-        "ref": "knowledge:404869",
-        "score": 15.7594,
-        "source_idx": 404869,
-        "project": "flac",
-        "cve": "CVE-2014-9028",
-        "cwe": ["CWE-119"],
-        "func_signature": "FLAC__bool read_residual_partitioned_rice_(FLAC__StreamDecoder *decoder, ...",
-        "summary": "CWE-119 Heap-based buffer overflow in stream_decoder.c in libFLAC before 1.3.1 ...",
-        "retriever": "bm25"
-      }
-    ],
-    "elapsed_ms": 18.66
+      {"ref": "knowledge:404869", "score": 32.3354, "source_idx": 404869,
+       "project": "flac", "cve": "CVE-2014-9028", "cwe": ["CWE-787"],
+       "func_signature": "...", "summary": "...", "retriever": "bm25"}
+    ]
   },
   "error": null
 }
 ```
 
-每个 `hit` 只有契约里的 9 个字段，未新增字段；`summary` 由 CWE + NVD 描述组成，不回填测试集代码或修复 diff。
-
 ### 4.2 Agent 工具
 
-- 实现：`repo_tools/search_knowledge.py`；注册：`repo_tools/registry.py`（`_HANDLERS` + `TOOL_SCHEMAS` + `summarize`）。
-- 参数：`query`（必填）、`top_k`（1~10）、`project`、`cwe`。
-- 不依赖仓库快照；索引缺失时抛 `ToolError`，由 `dispatch` 转成 `ok=false`，不中断循环。
-- Trace：沿用循环现有的 `repo_tool` 事件（`name = search_knowledge`），示例：
-
-```json
-{
-  "type": "repo_tool",
-  "status": "ok",
-  "name": "search_knowledge",
-  "duration_ms": 1235.28,
-  "payload": {
-    "step": 1,
-    "arguments": {"query": "heap buffer overflow image decoder", "top_k": 3},
-    "summary": {
-      "ok": true,
-      "total_matches": 3,
-      "hits": [{"ref": "knowledge:404869", "cve": "CVE-2014-9028", "score": 15.7594}],
-      "elapsed_ms": 6.27
-    }
-  }
-}
-```
-
-TraceEvent 契约里另有 `knowledge_search` 类型，但按约束没有改 Agent 循环，因此统一走 `repo_tool`；若后续要区分，可在循环里按工具名映射事件类型。
-
-### 4.3 界面
-
-`web/src/App.vue` 新增“4. 知识库检索”面板：查询框、项目/CWE 过滤、top_k、命中列表（CVE、项目、分数、签名、摘要、CWE）。`web/dist` 已重新构建并入库，原有三个面板未改。
+- 名称：`search_knowledge`，参数 `query`、`top_k`、`project`、`cwe`。
+- 注册：`repo_tools/registry.py`；轨迹事件沿用 `repo_tool`，**未改 Agent 循环**。
+- stub provider 下工具调用顺序是确定性的，只证明链路通，不代表真实决策质量。
 
 ## 5. 验证结果
 
-### 5.1 泄漏审计
+### 5.1 泄漏审计（严格 0.5）
 
-- idx / commit / 规范化哈希：0 交集。
-- CVE：测试集无 `cve` 字段，无法直接比对；测试函数文本出现 2 个 CVE，其中 CVE-2017-5226 在知识库中存在，需人工确认。
-- 近似片段：25 对 ≥0.8（最高 0.9899），15 对 0.5~0.8。25 条测试样本受影响，占 150 对的 16.7%。
-- 处置：14 条知识记录默认剔除，明细见 `docs/p3-knowledge-leakage-audit.md`。
-
-### 5.2 检索自测（40 个案例，top_k=3）
-
-| 指标 | 结果 |
+| 维度 | 结果 |
 |---|---|
-| CVE 描述 query：top-3 命中同一 CVE | 40/40 = 100%（自检索上界） |
-| CVE 描述 query：top-3 命中同一记录 | 39/40 = 97.5% |
-| 同项目不同 CVE 负例：误命中目标 CVE | 1/39 = 2.6% |
-| 修复提交标题 query：top-3 命中同一 CVE | 33/34 = 97.1% |
-| 函数签名 query：top-3 命中同一 CVE | 38/40 = 95.0% |
+| idx 交集 | 0 |
+| commit 交集 | 0 |
+| 规范化哈希交集 | 0 |
+| 近似配对（全部 ≥0.5） | 178 对（≥0.8 115，0.5~0.8 63） |
+| 近似重复剔除 | 75 条 |
+| CVE 文本提及剔除 | 2 条（CVE-2017-5226，idx 3020 / 160379） |
+| 合计剔除 | **77 条** |
+| 最终入索引 | **7,497 条** |
+| 卡片残余审计 | **0 对**，最高 0.4941 |
 
-失败样例：
+为什么从 0.8 收紧到 0.5、原 0.5~0.8 的 15 对逐条判断、残余风险，见
+[泄漏审计报告](../p3-knowledge-leakage-audit.md)。
 
-- 负例：目标 CVE-2014-3597，用同项目 CVE-2014-4049 的描述检索，top-3 仍召回 CVE-2014-3597（第 3 位）。
-- 函数签名：`void Compute(OpKernelContext* c) override` 这类通用签名在 tensorflow 中大量复用，query CVE-2021-37644 的前 3 条都是其它 CVE。
-- 修复标题：CVE-2019-13137 的提交标题只是一个 issue 链接，缺少语义，top-3 全部跑偏。
+### 5.2 检索自测（同一批 40 个固定案例）
 
-### 5.3 端到端
+| 指标 | 收紧前（7,560 条，0.8） | 收紧后（7,497 条，0.5） |
+|---|---|---|
+| CVE 描述 query：top-3 命中同一 CVE | 40/40 = 100% | 40/40 = 100% |
+| CVE 描述 query：top-3 命中同一记录 | 39/40 = 97.5% | 39/40 = 97.5% |
+| 同项目不同 CVE 负例：误命中 | 1/39 = 2.6% | 1/39 = 2.6% |
+| 修复提交标题 query：top-3 命中同一 CVE | 33/34 = 97.1% | 33/34 = 97.1% |
+| 函数签名 query：top-3 命中同一 CVE | 38/40 = 95.0% | 38/40 = 95.0% |
+| 单次检索中位数 / P95 / 最大 | 23.15 / 53.30 / 80.44 ms | 19.69 / 40.92 / 53.20 ms |
 
-- `GET /api/health`：200，provider 为 stub。
-- `GET /api/knowledge/search?q=heap buffer overflow in image decoder&top_k=2`：200，返回 2 条，`elapsed_ms=18.66`。
-- 过滤：`project=openssl&cwe=CWE-310` 时先按元数据缩小候选，再打分。
-- 单条运行 `idx=194989`（配对 218785）：仍是 4 步 stub 流程，`P-B`，两版 `prediction=0`；报告里 `provider.tools` 已包含 `search_knowledge`。
-- 用假 provider 强制调用一次 `search_knowledge`，`trace.jsonl` 写出 `repo_tool` 事件，工具返回 3 条命中。
-- 首页 `GET /`：200；dist 中可检索到“知识库检索”面板。
+40 个案例没有一个因剔除而消失（`cases_missing_from_index=[]`），因此没有“查询命中不到”
+的情况；上述数字未做任何调参。正例 100% 仍是自检索上界，不能当泛化能力。
 
-## 6. 已知短板与下一步
+### 5.3 服务实跑（本机 8010 端口）
 
-### 6.1 已知短板
+```
+/api/health            ok=True  provider=stub  dataset=300/150
+/api/knowledge/search  ok=True  candidates=7497  elapsed_ms=17.55
+  HIT knowledge:404869 flac CVE-2014-9028 score=32.3354
+  HIT knowledge:208089 flac CVE-2014-9028 score=32.0828
+  HIT knowledge:6239   Chrome CVE-2014-3157 score=17.2459
+/                      status=200  bytes=427
+```
 
-1. **只有 BM25**：同义词、改写表达召回弱；中文语料稀缺，中文 query 主要靠代码标识符命中。
-2. **自测 100% 是自检索**：query 直接来自卡片自身的 CVE 描述，属于上界；真正有信息量的是负例 2.6% 和签名/标题探针。
-3. **内容级泄漏仍有残余**：0.5~0.8 的 15 对未剔除；近似比较只取前 4,000 字符，超长函数尾部差异可能漏检。
-4. **CVE 无法直接比对**：测试集没有 `cve` 字段，只能扫函数文本，覆盖不完整。
-5. **冷启动 1.24 s**：每次进程首次检索要加载 37 MB 缓存；索引更新后必须重启服务。
-6. **摘要可能提示修复方向**：`summary` 含 NVD 描述与提交标题，虽已剔除高相似条目，中相似条目仍可能给出方向性提示。
-7. **界面很轻**：没有分页、项目下拉和结果详情页，只适合冒烟查看。
+> `/api/health` 在缺数据时返回 HTTP 200 但 `ok=false`、`status=degraded`，前端据此显示横幅；
+> 运行接口才返回 503。不要把“health 200”误读为“数据齐全”。
 
-### 6.2 下一步可认领任务
+## 6. 已知短板
 
-- 接入离线 embedding（配置好本地模型后）做 BM25 + 向量混合召回，并在 `KnowledgeHit.retriever` 里区分 `bm25 / vector / hybrid`。
-- 人工抽查 15 对 0.5~0.8 记录，决定是否扩大剔除阈值；把审计阈值做成参数。
-- 给审计补“按函数名 + 项目”的统计，并评估 CVE 文本提及的覆盖缺口。
-- 让 `/api/health` 汇报知识库卡片数与索引构建时间（需先与前端约定字段，避免破坏现有结构）。
-- 批量评测时记录每次 `search_knowledge` 的命中与最终判定，统计“检索是否真的帮到模型”。
-- 前端补分页与项目下拉；若新增交互，记得重新构建 `web/dist`。
+1. 只有 BM25，没有向量检索；同义改写、跨语言描述召回弱。
+2. 自测正例来自卡片自身 NVD 描述，是自检索上界，不代表真实查询泛化。
+3. 近似检测是 8-gram 词面包含度，且只比较前 4,000 字符；改标识符/重排/尾部差异可能漏检。
+4. 同项目同类型但低于 0.5 的记录仍可能通过 `cve_desc` / 提交标题提示漏洞方向；
+   为避免掏空知识库，本次未做同项目整体剔除。
+5. 测试集没有 `cve` 字段，CVE 维度只能靠函数文本提及，覆盖不完整。
+6. 索引是本地缓存，不入库；换机器必须重跑审计与建索引。
+7. 真实模型未接入，Agent 工具调用顺序仍是 stub 的确定性逻辑。
+
+## 7. 剩余待办与认领方式
+
+按“能否独立开工”排序；每条都给出目标、改动目录、依赖与验收标准。
+
+| # | 任务 | 目标 | 改哪里 | 依赖 | 验收标准 |
+|---|---|---|---|---|---|
+| 1 | 接真实模型跑通一对 | 用 OpenAI 兼容模型跑 1 对样本（194989 / 218785），产出非 stub 报告 | `backend/agent/`、provider 配置 | 模型 key | `is_stub=false`；`trace.jsonl` 有真实 `llm_step`；报告可复现；失败时给出可读错误 |
+| 2 | 300 条全量评测 | 跑完 150 对，输出 P-C / P-V / P-B / P-R 与混淆矩阵 | `bench/`、`backend/api/` | 任务 1 的真实模型 | `EvalReport` 覆盖 300 条；给出整体指标、失败样本列表与运行日志 |
+| 3 | 向量检索 / hybrid | 离线 embedding 接入，BM25 + 向量融合 | `rag/`（新增 embedder、hybrid retriever） | 模型权重与磁盘 | `manifest.retriever=hybrid`；自测不劣于 BM25；记录构建时间与体积；未装依赖时仍能回退 BM25 |
+| 4 | 高相似样本处置复核 | 数据或阈值变化后重跑审计，确认残余仍为 0 | `knowledge/`、`rag/` | 新知识库/新测试集 | `audit` 残余 0 对；剔除清单可复现；报告数字同步 |
+| 5 | README 承诺项验证 | 把 README 中的“未执行/未接入”逐项落实或改口径 | `README.md`、`docs/` | 任务 1、2、3 | README 数字与 `manifest.json`、自测报告一致；不再出现未验证承诺 |
+| 6 | 索引产物一致性 | 换机器后按文档重建，确认 7,497 条与检索结果一致 | `cache/knowledge/`（本地） | 知识库与测试集 | `manifest.source.cards_indexed=7497`；`/api/knowledge/search` 正常；审计残余 0 |
+
+> 任务 4 的“那 25 对高相似样本最终处置”已在本轮完成：25 对 ≥0.8 与 15 对 0.5~0.8
+> 全部剔除，最终残余 0；若知识库或测试集更新，需要按同一脚本重跑。
+
+## 8. 禁区
+
+1. **不改 contracts 字段**：`shared/contracts/` 下六个 schema 的字段与语义不动；
+   `KnowledgeHit` 的 `additionalProperties=false` 不能放开。
+2. **不把测试集或知识库提交进仓库**：`knowledge.jsonl`、`test.jsonl` 都是课程数据。
+3. **不提交缓存**：`cache/` 只存本地产物；`web/node_modules/` 同样不入库。
+4. **不放宽泄漏阈值**：0.5 是当前底线，不得为了自测分数调回 0.8；
+   `--include-leaky` 只用于研究，不得用于评测或演示。
+5. **不在 Agent 循环写死工具调用顺序**：工具由模型决策；stub 的确定性顺序只用于测试。
+6. **不在代码/文档写本机绝对路径或密钥**：路径用 `cache/...` 相对写法；凭证只从环境变量读。
+
+## 9. 合并记录
+
+- PR #7（`feat/p3-rag`）以 merge commit 合入 `main`，`main` @ `2329983`
+  （`23299837ceee935e7b6d1661f9e856b92d0eb72a`）。
+- 严格口径复核在 `fix/leakage-strict` 完成，合并后 `main` 的最终库规模为 7,497 条；
+  合并 sha 见最终回复与 `git log`。
