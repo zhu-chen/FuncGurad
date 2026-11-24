@@ -1,8 +1,6 @@
 # FuncGurad
 
-面向 C/C++ 的函数级漏洞检测智能体。
-
-输入一个函数（含 commit 上下文），Agent 自主决定调用只读仓库工具（查找文件、搜索内容、读取片段），给出漏洞判定与理由，并输出可在快照中复核的证据路径。
+FuncGurad 是中国科学院大学（国科大）2026 年秋季《高级软件工程》课程大作业，选题为「函数漏洞检测智能体工具」。给定一个 C/C++ 函数和修复提交链接，课程要求 Agent 先检索历史 CVE 案例并初判可疑点，再根据证据需要读取对应版本仓库中的调用方、被调用方或声明，最后通过图形界面展示判定、理由和分析记录。见[课程要求速查](ref/3.%20函数漏洞检测智能体工具.md)和[课程要求与实现对照](docs/handoff/2026-11-24-course-requirements.md)。
 
 ## 当前进度
 
@@ -10,8 +8,8 @@
 |---|---|---|
 | 仓库骨架与 JSON 契约 | 已完成 | 六个契约（Sample / ResultRecord / EvalReport / RepoSnapshot / KnowledgeHit / TraceEvent）与评测基线 |
 | 仓库快照与函数定位 | 已完成 | 原生 git 克隆、父提交解析、快照导出、文本定位 v1；已用 6 条样本验证 |
-| Agent 闭环 | 已完成 | 自主循环 + 四个只读工具（含知识检索）+ 证据门控；`result.jsonl` 严格只含 `idx` 与 `prediction` |
-| 图形界面与后端接口 | 已完成 | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
+| Agent 闭环 | 自主工具调用已接入 | 本地循环提供四个只读工具和证据门控。目前由模型选择是否检索知识库，提示词要求先定位函数，课程要求的检索顺序仍待落实 |
+| 图形界面与后端接口 | 部分完成 | Vue3 + FastAPI 支持按预置 idx 启动、批量提交编号、查看实时轨迹和报告。直接输入函数与链接、上传 `.jsonl` 两个入口待补 |
 | 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
 | 真实模型接入 | 已完成（需本地 key） | 已接入 GLM-5.3-Flash（智谱 OpenAI 兼容接口）；未配置 key 时自动回退 stub |
 | 全量评测 | 状态待确认 | 驱动已就绪（`scripts/run_full_eval.py`，断点续跑）；队友报告进行中，未经核实，结果只写 `cache/` |
@@ -117,6 +115,17 @@ $env:FUNCGUARD_GIT_PROXY = "http://127.0.0.1:7897"
 
 ## 全量评测
 
+课程测试集共 150 对、300 条，每条含 `idx`、`commit_url`、`target` 和 `func`。每次推理只给一个版本。漏洞版（`target=1`）读修复提交的父提交，修复版（`target=0`）读修复提交本身。两版独立预测后才配对计分。
+
+| 类别 | 漏洞版预测 | 修复版预测 | 含义 |
+|---|---:|---:|---|
+| P-C | 1 | 0 | 两版均判对 |
+| P-V | 1 | 1 | 修复版误报 |
+| P-B | 0 | 0 | 漏洞版漏报 |
+| P-R | 0 | 1 | 两版均判反 |
+
+按 **P-C 对数**定基础等级。30 对及以上为 A，25–29 对为 B，20–24 对为 C，少于 20 对为 D。仅当 `P-R > P-C / 2` 时降一级，最低 D。
+
 数据与模型就绪后，使用可断点续跑的驱动：
 
 ```powershell
@@ -134,11 +143,12 @@ $env:FUNCGUARD_FULL_EVAL_CACHE = "cache\full-eval"
 - 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `<cache>/eval/`：
   `full-result.jsonl`、`eval-report.json`、`official-evaluation.txt`、`summary.json`、`run.log`。
 - 进度查看：`python scripts/eval_progress.py --cache cache\full-eval`（加 `--follow` 每 10 秒刷新）。
+- 课程提交文件名为 `result.jsonl`。全量运行后核对 `full-result.jsonl` 覆盖全部 300 个 idx、每行只含 `idx` 和整数 `prediction`（0 或 1），并确认 `eval-report.json` 中 `pairs_evaluated` 为 150，再按课程文件名提交副本。
 - **当前状态：待确认（队友报告进行中，未经核实）；驱动已就绪，结果只写 `cache/`，不入库。** 参数与注意事项详见 [P7 交接文档](docs/handoff/2026-11-24-p7-real-model-eval.md)。
 
 ## 知识库检索
 
-知识库文件是本地课程数据，不入库。构建索引（产物写 `cache/knowledge/`）：
+知识库仅使用课程提供的历史 CVE 数据，可成对使用历史漏洞版和修复版，引用漏洞描述、修复提交说明、CWE 和项目元信息，也可用 LLM 整理这些材料。课程不限定索引形式，本项目使用 BM25。检测 Agent 禁止联网搜索或引入额外安全知识，仓库获取限于 `commit_url` 对应的指定版本。知识库文件保留在本地，构建产物写入 `cache/knowledge/`。
 
 ```powershell
 $env:FUNCGUARD_KNOWLEDGE_PATH = "<knowledge.jsonl 路径>"
