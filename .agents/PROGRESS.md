@@ -1,12 +1,14 @@
 # 已经取得的进展和完成的任务
 
-> 格式 
+> 使用约定：开工前在 TODO.md 认领任务并标注“进行中 + 你的名字”；收工前更新本文件状态，并在 docs/handoff/ 写交接文档。
+
+> 格式
 > ## 任务标题
-> 
+>
 > 完成人 完成日期
-> 
+>
 > 任务说明
-> 
+>
 > 需要交代的事项
 
 ## 建立仓库与创建初始文件
@@ -29,5 +31,44 @@
 - 仓库不包含 API key；真实 key 只放在本机 `.env.local`（已 gitignore）。未配置 key 时仍回退到确定性 stub。
 - 真实模型接入任务已完成：模型接口为 `https://open.bigmodel.cn/api/paas/v4`，模型为 `glm-5.3-flash`，已跑通 function calling 与完整 Agent 闭环。`https://agent-api.bigmodel.cn/api/agent/managed` 是 Managed Agents（云端托管 Agent）接口，不是模型对话接口；本次没有接入 Managed Agents 这一产品形态，但不影响模型接入任务的完成。
 - 已完成 provider 直连、Agent 闭环、CLI 编排和 `/api/health` 冒烟验证；
-- 本次改动尚未提交；提交前确认不包含 `.env.local` 与本机 `CLAUDE.md`。
-大伙注意：正在跑 300 条全量评测。
+- 本次改动已于 2026.11.23 提交为 `7954aa4`，直接推送到 `main`（未走 PR）。
+- 2026.11.24 更正：全量评测驱动已随该提交入库，但**尚未执行，无结果文件**；此前“正在跑 300 条全量评测”的记录作废。
+
+## 基础链路（P1 / P2）
+
+2026.11.22，分支 `feat/p1-foundation`、`feat/p2-snapshot`（均已合并 `main`）
+
+- P1：仓库骨架、六个 JSON 契约、评测基线。
+- P2：commit URL 解析、原生 git 快照、函数定位 v1；用 6 条样本验证，43 仓库全量快照未跑。
+
+交接文档：`docs/handoff/2026-11-22-p1-foundation.md`、`2026-11-22-p2-snapshot.md`。
+
+## Agent 闭环与界面（P4 / P5）
+
+2026.11.22，分支 `feat/p4-agent-e2e`、`feat/p5-ui`（均已合并 `main`）
+
+- P4：自主循环、只读工具、证据门控、CLI；当时为 3 个工具、stub 口径。
+- P5：Vue3 单页 + FastAPI，单条/批量/报告/轨迹接口，`web/dist` 入库。
+- 结论均来自 stub provider，只验证链路，不代表真实检测能力。
+
+## 知识库 / RAG 与严格泄漏隔离（P3）
+
+2026.11.23，分支 `feat/p3-rag`（PR #7）、`fix/leakage-strict`（PR #8），均已合并 `main`
+
+- P3：泄漏审计、知识卡片、纯 Python BM25、`GET /api/knowledge/search`、Agent 工具 `search_knowledge`、前端检索面板。
+- 泄漏阈值由 0.8 收紧到 0.5：全量枚举 178 对 ≥0.5 配对，剔除 77 条（近似 75 + CVE 文本提及 2），最终 **7,497 条**入索引；索引卡片复核残余 0 对（最高包含度 0.4941）。
+- 检索自测（40 个固定案例）收紧前后一致；正例 100% 是自检索上界，不代表泛化能力。
+
+交接：`docs/handoff/2026-11-23-p3-knowledge-rag.md`、`2026-11-23-p3-leakage-strict.md`；审计报告 `docs/p3-knowledge-leakage-audit.md`。
+
+## 交接文档与口径维护（P7）
+
+2026.11.24，分支 `docs/p7-handoff`
+
+- 新增 `docs/handoff/2026-11-24-p7-real-model-eval.md`：GLM 接入方式、provider 配置、全量评测驱动用法与当前未完成项。
+- 统一 README 与 `docs/handoff/README.md` 的全量评测口径为“驱动已就绪、尚未执行、无结果文件”。
+- 修正 README 中 `max_tokens` / 总超时 / 单请求超时，与 `backend/config.py` 默认值对齐（16384 / 600 s / 180 s）。
+- 去掉 `scripts/run_full_eval.py`、`scripts/eval_progress.py` 与 README 中写死的本机盘符评测缓存路径，改为环境变量 `FUNCGUARD_FULL_EVAL_CACHE`，缺省落到仓库内 `cache/full-eval`。
+- 重排 `.agents/TODO.md` 为可认领清单。
+
+当前 `main`：`d00d65685a59c31b340c4189912740e84584a7f5`。
