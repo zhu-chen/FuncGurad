@@ -1,6 +1,6 @@
 # 已经取得的进展和完成的任务
 
-> 使用约定：开工前在 TODO.md 认领任务并标注“进行中 + 你的名字”；收工前更新本文件状态，并在 docs/handoff/ 写交接文档。
+> 使用约定：开工前在 TODO.md 认领任务并注明认领人与日期；收工前更新本文件状态，并在 docs/handoff/ 写交接文档。
 
 > 格式
 > ## 任务标题
@@ -72,4 +72,4 @@
 - 去掉 `scripts/run_full_eval.py`、`scripts/eval_progress.py` 与 README 中写死的本机盘符评测缓存路径，改为环境变量 `FUNCGUARD_FULL_EVAL_CACHE`，缺省落到仓库内 `cache/full-eval`。
 - 重排 `.agents/TODO.md` 为可认领清单。
 
-当前 `main`：`d00d65685a59c31b340c4189912740e84584a7f5`。
+当前 `main`：见仓库 HEAD（2026-11-24 已合并 P7 文档与单元测试基线）。

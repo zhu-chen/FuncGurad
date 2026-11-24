@@ -1,7 +1,7 @@
 # 单元测试基线（2026-11-24）
 
 - 分支：`test/baseline`，从 `main`（`9884cd4`）拉出。
-- 合并状态：已合并进 `main`（2026-11-24，合并后 `main` 为 `b0cd484`，PR #10）。
+- 合并状态：已合并（2026-11-24）进 `main`；如需追溯，用 `git log -- docs/handoff/2026-11-24-tests-baseline.md` 查看。
 - 原则：只新增测试与测试配置，不改任何生产实现；`backend/agent/`、`scripts/`、`shared/contracts`、`cache/` 均未改动。
 
 ## 测了什么
