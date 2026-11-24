@@ -4,6 +4,15 @@
 
 > 每条任务写清：目标 / 目录 / 依赖 / 完成判据 / 状态 / 认领人。
 
+## 0. 真实模型单对验证（DeepSeek）
+
+- 目标：用 DeepSeek（OpenAI 兼容）跑通 idx=194989 与其配对 218785，确认 `is_stub=false`，记录两版 prediction、P-x 分类、步数、耗时与 token 用量。
+- 目录：`backend/`（只验证，不改 Agent 循环与门控）；产物写 `cache/runs/`。
+- 依赖：真实模型凭证（只放进程环境变量，不入库）、`cache/dataset/test.jsonl`、两条样本快照。
+- 完成判据：`result.jsonl` 两行且只有 `idx` / `prediction`；`report.json` 的 `is_stub=false`；成本与耗时记录在回报中。
+- 状态：进行中（当前认领者）
+- 认领人：当前认领者
+
 ## 1. 300 条全量评测
 
 - 目标：跑完 150 对（300 条），产出 P-C / P-V / P-B / P-R 与等级。
