@@ -69,6 +69,7 @@ def _render(cache: Path, dataset: Path) -> str:
     status_map = {row.get("idx"): row for row in status_rows}
     status_counts = Counter(row.get("status") for row in status_rows)
     done = [row for row in status_rows if row.get("status") == "done"]
+    synthetic = [row for row in done if row.get("synthetic_snapshot")]
     done_repo = Counter(row.get("repo") for row in done)
 
     predictions = _read_jsonl(out / "predictions.jsonl")
@@ -99,14 +100,33 @@ def _render(cache: Path, dataset: Path) -> str:
         except ValueError:
             pass
 
+    summary_path = out / "summary.json"
+    summary_line = ""
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            score = summary.get("score") or {}
+            counts = score.get("counts") or {}
+            summary_line = (
+                f"最终评分: P-C={counts.get('P-C', 0)} P-V={counts.get('P-V', 0)} "
+                f"P-B={counts.get('P-B', 0)} P-R={counts.get('P-R', 0)} "
+                f"等级={score.get('final_grade')} "
+                f"合成快照={summary.get('synthetic_snapshots', 0)}"
+            )
+        except (OSError, json.JSONDecodeError):
+            summary_line = ""
+
     lines = [
         f"缓存目录: {cache}",
         f"样本: {total}  已写入状态: {len(status_rows)}  已完成: {len(done)}  "
+        f"（真实快照 {len(done) - len(synthetic)}，合成快照 {len(synthetic)}）",
         f"预测数: {len(predictions)}  prediction 分布: {dict(pred_counts)}",
         f"状态: {dict(status_counts)}",
         f"已用时: {elapsed or '未知'}",
-        f"最近事件: {current or '（尚无）'}",
     ]
+    if summary_line:
+        lines.append(summary_line)
+    lines.append(f"最近事件: {current or '（尚无）'}")
 
     if failures:
         lines.append("未完成/失败:")

@@ -132,7 +132,7 @@ python -m backend.cli run --idx 999001 --single --dataset <临时 test.jsonl> --
 
 ## 7. 限制与下一步
 
-- 全量评测进度与结果以 P7 交接文档为准；P6 只覆盖接入与冒烟。
+- 全量评测结果见 [P7 交接文档](2026-11-24-p7-full-eval.md)；P6 只覆盖接入与冒烟。
 - 真实模型调用会产生费用；默认上限为 10 步 / 600 s / 单请求 180 s / 16384 输出 tokens，全量驱动可覆盖为 900 s。
 - 推理模型可能先产生 `reasoning_content`，再输出最终 JSON；轨迹里同时保留两者，便于排查。
 - 若后续要接入 Managed Agents，需要单独设计 session/SSE 执行链路与自定义工具回调，

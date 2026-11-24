@@ -12,9 +12,9 @@ FuncGurad 是中国科学院大学（国科大）2026 年秋季《高级软件�
 | 图形界面与后端接口 | 部分完成 | Vue3 + FastAPI 支持按预置 idx 启动、批量提交编号、查看实时轨迹和报告。直接输入函数与链接、上传 `.jsonl` 两个入口待补 |
 | 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
 | 真实模型接入 | 已完成（需本地 key） | 已接入 GLM-5.3-Flash（智谱 OpenAI 兼容接口）；未配置 key 时自动回退 stub |
-| 全量评测 | 状态待确认 | 驱动已就绪（`scripts/run_full_eval.py`，断点续跑）；队友报告进行中，未经核实，结果只写 `cache/` |
+| 全量评测 | 已完成 | 300/300 样本、150/150 对；P-C 55 / P-V 67 / P-B 20 / P-R 8，等级 A；真实快照 194 条，合成兜底 106 条 |
 
-> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测的驱动已就绪，当前状态待确认（队友报告进行中，未经核实）；评测产物只写 `cache/`、不入库，仓库里看不到结果属正常，结果确认后再补充 P-C/P-V/P-B/P-R 与等级。
+> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。全量评测已完成：300 条预测全部参与评分，P-C 55 / P-V 67 / P-B 20 / P-R 8，最终等级 A。其中 194 条使用真实仓库快照，106 条因 GitHub 限流或 commit 不可达使用合成函数文本快照；仅看真实快照子集（94 对）为 P-C 36 / P-V 41 / P-B 13 / P-R 4，等级 A。详见 [P7 全量评测](docs/handoff/2026-11-24-p7-full-eval.md)。
 
 ## 快速开始
 
@@ -134,17 +134,33 @@ python scripts/run_full_eval.py
 python scripts/run_full_eval.py --dataset cache\dataset\test.jsonl
 # 产物目录默认 cache\full-eval，可用环境变量或 --cache 覆盖
 $env:FUNCGUARD_FULL_EVAL_CACHE = "cache\full-eval"
+# 本次全量运行使用 D 盘缓存，并开启合成函数文本快照兜底
+python scripts/run_full_eval.py --cache D:\FuncGuardCache --synthetic-fallback
 ```
 
 - 默认缓存目录是仓库内相对路径 `cache/full-eval`；快照、元数据与运行产物写在 `<cache>/` 下，评测结果写在 `<cache>/eval/`。不要把大仓库快照放到系统盘。
 - 知识索引固定从 `cache/knowledge/` 读取（可用 `FUNCGUARD_KNOWLEDGE_DIR` 覆盖），执行前需先按「知识库检索」构建。
 - 按仓库分组准备快照，跑完一个仓库后删除该仓库的快照与 git 克隆，避免 TensorFlow 等大仓库占满磁盘。
 - 每跑完一个样本就原子写入 `predictions.jsonl` / `status.jsonl`；中断后重跑会跳过已完成样本。
+- `--synthetic-fallback`：commit 不可达或 GitHub 限流时，用数据集函数文本生成合成快照继续评测，并在状态中标记 `synthetic_snapshot`。
 - 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `<cache>/eval/`：
   `full-result.jsonl`、`eval-report.json`、`official-evaluation.txt`、`summary.json`、`run.log`。
+  本次运行产物在 `D:\FuncGuardCache\eval\`，仓库内副本在 `cache/runs/full-eval/`。
 - 进度查看：`python scripts/eval_progress.py --cache cache\full-eval`（加 `--follow` 每 10 秒刷新）。
 - 课程提交文件名为 `result.jsonl`。全量运行后核对 `full-result.jsonl` 覆盖全部 300 个 idx、每行只含 `idx` 和整数 `prediction`（0 或 1），并确认 `eval-report.json` 中 `pairs_evaluated` 为 150，再按课程文件名提交副本。
-- **当前状态：待确认（队友报告进行中，未经核实）；驱动已就绪，结果只写 `cache/`，不入库。** 参数与注意事项详见 [P7 交接文档](docs/handoff/2026-11-24-p7-real-model-eval.md)。
+- **当前状态：已完成**：300 条预测全部生成，150 对全部评分；P-C 55 / P-V 67 / P-B 20 / P-R 8，等级 A。参数与注意事项见 [P7 全量评测](docs/handoff/2026-11-24-p7-full-eval.md) 与 [P7 真实模型说明](docs/handoff/2026-11-24-p7-real-model-eval.md)。
+
+### 2026-11-24 结果
+
+| 口径 | 参与配对数 | P-C | P-V | P-B | P-R | 等级 |
+|---|---:|---:|---:|---:|---:|---|
+| 全量（含合成兜底） | 150 | 55 | 67 | 20 | 8 | A |
+| 仅真实仓库快照 | 94 | 36 | 41 | 13 | 4 | A |
+
+- 300 条预测全部生成，官方 `dataset/evaluation.py` 与 `bench.score` 结果一致，跳过组数 0。
+- 真实快照 194 条；合成快照 106 条，主要来自 TensorFlow（65）、mruby（12）、linux（8）等因 GitHub 429/commit 不可达的仓库。
+- 结果副本：`cache/runs/full-eval/`（`cache/` 不入库）；完整产物在 `D:\FuncGuardCache\eval\`。
+- 详见 [P7 交接文档](docs/handoff/2026-11-24-p7-full-eval.md)。
 
 ## 知识库检索
 

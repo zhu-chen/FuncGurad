@@ -67,6 +67,58 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     os.replace(tmp, path)
 
 
+def _snapshot_ready(meta_path: Path) -> bool:
+    """元数据存在且 snapshot_dir 仍然存在时，才认为样本可运行。"""
+    try:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    raw = str(payload.get("snapshot_dir") or "").strip()
+    if not raw:
+        return False
+    snapshot = Path(raw)
+    if not snapshot.is_absolute():
+        snapshot = ROOT / snapshot
+    return snapshot.is_dir()
+
+
+def _make_synthetic_snapshot(sample: Any, cache: Path) -> Path:
+    """commit 不可达时的兜底：只把数据集提供的函数文本写成一个快照。
+
+    这不是真实仓库快照，只用于让 Agent 仍能基于函数文本给出可复核结论；
+    状态记录会带 synthetic_snapshot=True，报告中需单独说明覆盖率。
+    """
+    snapshot = cache / "snapshots" / f"_synthetic__{sample.idx}"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    (snapshot / "func.c").write_text(
+        "/* synthetic fallback: real commit was unreachable; "
+        "only the dataset function text is available */\n"
+        + sample.func.strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    meta = {
+        "idx": sample.idx,
+        "commit_url": sample.commit_url,
+        "requested_commit": None,
+        "resolved_commit": None,
+        "version_role": "vulnerable" if sample.target == 1 else "fixed",
+        "snapshot_dir": str(snapshot),
+        "method": "synthetic-fallback",
+        "locate_status": "found",
+        "locate_path": "func.c",
+        "has_git_dir": False,
+        "note": "real commit unreachable; snapshot contains only dataset func text",
+        "created_at": _now(),
+    }
+    meta_path = cache / "meta" / "samples" / f"{sample.idx}.json"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return meta_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="FuncGurad 全量评测")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
@@ -109,6 +161,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-stub",
         action="store_true",
         help="允许使用 stub provider（默认遇到 stub 直接退出）",
+    )
+    parser.add_argument(
+        "--synthetic-fallback",
+        action="store_true",
+        help="commit 不可达时，用数据集函数文本生成合成快照并继续评测（报告中标注）",
     )
     args = parser.parse_args(argv)
 
@@ -258,27 +315,36 @@ def main(argv: list[str] | None = None) -> int:
             command.extend(["--only-idx", str(idx)])
         log(f"prepare {repo}: {len(idxs)} samples -> {log_file}")
         started = time.monotonic()
-        try:
-            with log_file.open("w", encoding="utf-8") as stream:
-                completed = subprocess.run(
-                    command,
-                    cwd=str(ROOT),
-                    env=os.environ.copy(),
-                    stdout=stream,
-                    stderr=subprocess.STDOUT,
-                    timeout=args.prepare_timeout,
-                )
-        except subprocess.TimeoutExpired:
-            log(
-                f"prepare {repo}: TIMEOUT after {args.prepare_timeout}s; "
-                "will run whatever metadata exists"
+        with log_file.open("w", encoding="utf-8") as stream:
+            process = subprocess.Popen(
+                command,
+                cwd=str(ROOT),
+                env=os.environ.copy(),
+                stdout=stream,
+                stderr=subprocess.STDOUT,
             )
-            return 124
+            try:
+                returncode = process.wait(timeout=args.prepare_timeout)
+            except subprocess.TimeoutExpired:
+                # Windows 下必须杀整棵进程树，否则 git 子进程会继续下载。
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                        capture_output=True,
+                    )
+                else:
+                    process.kill()
+                process.wait()
+                log(
+                    f"prepare {repo}: TIMEOUT after {args.prepare_timeout}s; "
+                    "will run whatever metadata exists"
+                )
+                return 124
         log(
-            f"prepare {repo}: exit={completed.returncode} "
+            f"prepare {repo}: exit={returncode} "
             f"elapsed={time.monotonic() - started:.1f}s"
         )
-        return completed.returncode
+        return returncode
 
     def cleanup(repo: str) -> None:
         if args.keep_snapshots:
@@ -307,11 +373,20 @@ def main(argv: list[str] | None = None) -> int:
 
         prepare(repo, [sample.idx for sample in pending])
 
+        synthetic_idxs: set[int] = set()
         runnable = []
         for sample in pending:
             meta = cache / "meta" / "samples" / f"{sample.idx}.json"
-            if meta.exists():
+            if meta.exists() and _snapshot_ready(meta):
                 runnable.append(sample)
+            elif args.synthetic_fallback:
+                _make_synthetic_snapshot(sample, cache)
+                synthetic_idxs.add(sample.idx)
+                runnable.append(sample)
+                log(
+                    f"  idx={sample.idx}: real snapshot unavailable, "
+                    "using synthetic function-text snapshot"
+                )
             else:
                 record_fallback(sample, repo, "no_snapshot", "缺少样本快照元数据")
                 log(f"  idx={sample.idx}: no snapshot metadata, fallback benign")
@@ -346,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
                     "hit_max_steps": item.get("hit_max_steps"),
                     "evidence_gate": item.get("evidence_gate"),
                     "is_stub": item.get("is_stub"),
+                    "synthetic_snapshot": sample.idx in synthetic_idxs,
                     "elapsed_seconds": round(time.monotonic() - started, 2),
                     "recorded_at": _now(),
                 }
@@ -458,6 +534,9 @@ def main(argv: list[str] | None = None) -> int:
         "samples": len(samples),
         "predictions": len(predictions),
         "status_counts": dict(status_counts),
+        "synthetic_snapshots": sum(
+            1 for record in status_map.values() if record.get("synthetic_snapshot")
+        ),
         "elapsed_seconds": round(time.monotonic() - started_all, 1),
         "score": report,
     }

@@ -31,9 +31,9 @@
 - 仓库不包含 API key；真实 key 只放在本机 `.env.local`（已 gitignore）。未配置 key 时仍回退到确定性 stub。
 - 真实模型接入任务已完成：模型接口为 `https://open.bigmodel.cn/api/paas/v4`，模型为 `glm-5.3-flash`，已跑通 function calling 与完整 Agent 闭环。`https://agent-api.bigmodel.cn/api/agent/managed` 是 Managed Agents（云端托管 Agent）接口，不是模型对话接口；本次没有接入 Managed Agents 这一产品形态，但不影响模型接入任务的完成。
 - 已完成 provider 直连、Agent 闭环、CLI 编排和 `/api/health` 冒烟验证；
-- 本次改动已于 2026.11.23 提交为 `7954aa4`，直接推送到 `main`（未走 PR）。
-- 大伙注意：正在跑 300 条全量评测。
-- 2026.11.24 补记：上述评测状态由提交者本人确认，本轮未核实，不作废止；项目约定 `cache/` 不入库，仓库内看不到评测产物属于正常现象，不能据此判断没人在跑。
+- 本次改动已于 2026.11.23 提交为 `7954aa4`，直接推送到 `main`（未走 PR）；提交内容不包含 `.env.local` 与本机 `CLAUDE.md`。
+- 300 条全量评测已完成，结果见 `docs/handoff/2026-11-24-p7-full-eval.md` 与 README。
+- 2026.11.24 补记：全量评测已完成，300 条预测全部参与评分；此前“进行中/未核实”的状态作废。
 
 ## 基础链路（P1 / P2）
 
@@ -74,8 +74,29 @@
 
 当前 `main`：见仓库 HEAD（2026-11-24 已合并 P7 文档与单元测试基线）。
 
+2026.11.24 补记：全量评测已完成，结果见 `docs/handoff/2026-11-24-p7-full-eval.md`；本节“尚未执行”的口径已被该文档覆盖。
+
 ## 课程题目与验收文档
 
 2026.11.24，Codex。依据国科大《高级软件工程》课件更新 README、根目录 AGENTS.md 和测试说明。已按课件页码核对图形输入、Agent 决策与检索顺序、样本隔离和配对评分。评分测试 23 项通过。课程输入与流程的待办见任务 7，全量评测仍由原任务跟踪。见[课程要求与实现对照](../docs/handoff/2026-11-24-course-requirements.md)。
 
 2026.11.24 补记（Codex）：将课件的检测流程、隔离要求、报告字段和配对评分整理为[课程要求速查](../ref/3.%20函数漏洞检测智能体工具.md)，README 与根目录 AGENTS.md 均提供入口。
+
+## 完成 300 条全量评测
+
+赵志浩 2026.11.24
+
+使用 GLM-5.3-Flash 在课程测试集上完成 300 条（150 对）全量评测，
+新增断点续跑驱动 `scripts/run_full_eval.py` 与进度查看脚本 `scripts/eval_progress.py`，
+更新 README、P7 交接文档与交接索引。
+
+结果：P-C 55 / P-V 67 / P-B 20 / P-R 8，最终等级 A；官方 `dataset/evaluation.py`
+与 `bench.score` 结果一致，150 对全部参与评分。
+
+需要交代的事项：
+
+- 300 条中 194 条使用真实仓库快照，106 条因 GitHub 429 限流或 commit 不可达使用合成函数文本快照；状态文件里以 `synthetic_snapshot=True` 标记。
+- 仅真实快照子集为 94 对：P-C 36 / P-V 41 / P-B 13 / P-R 4，等级 A；样本量较小，仅作参考。
+- 合成快照主要集中在 TensorFlow（65）、mruby（12）、linux（8）等仓库；后续网络/凭据条件允许时可重跑这些仓库替换为真实快照。
+- 结果副本在 `cache/runs/full-eval/`（不入库），完整产物在 `D:\FuncGuardCache\eval\`。
+- 本轮为单次运行，未做多随机种子重复与逐样本人工复核；P-C/P-R 仍可能存在模型误判。
