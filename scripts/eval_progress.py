@@ -3,13 +3,16 @@
 用法：
     python scripts/eval_progress.py
     python scripts/eval_progress.py --follow      # 每 10 秒刷新
-    python scripts/eval_progress.py --cache D:/FuncGuardCache
+    python scripts/eval_progress.py --cache cache/full-eval
+
+缺省读取仓库内 cache/full-eval，可用 FUNCGUARD_FULL_EVAL_CACHE 覆盖。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -123,7 +126,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--cache",
         type=Path,
-        default=Path(r"D:/FuncGuardCache"),
+        default=Path(
+            os.getenv("FUNCGUARD_FULL_EVAL_CACHE", str(ROOT / "cache" / "full-eval"))
+        ),
     )
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--follow", action="store_true", help="每 10 秒刷新")

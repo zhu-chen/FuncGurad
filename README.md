@@ -14,9 +14,9 @@
 | 图形界面与后端接口 | 已完成 | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
 | 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
 | 真实模型接入 | 已完成（需本地 key） | 已接入 GLM-5.3-Flash（智谱 OpenAI 兼容接口）；未配置 key 时自动回退 stub |
-| 全量评测 | 进行中 | 300 条全量评测已启动（`scripts/run_full_eval.py`，断点续跑）；结果待汇总 |
+| 全量评测 | 状态待确认 | 驱动已就绪（`scripts/run_full_eval.py`，断点续跑）；队友报告进行中，未经核实，结果只写 `cache/` |
 
-> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测正在后台运行，完成后再更新 P-C/P-V/P-B/P-R 与等级。
+> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测的驱动已就绪，当前状态待确认（队友报告进行中，未经核实）；评测产物只写 `cache/`、不入库，仓库里看不到结果属正常，结果确认后再补充 P-C/P-V/P-B/P-R 与等级。
 
 ## 快速开始
 
@@ -56,9 +56,9 @@ npm run dev
 | Base URL | `https://open.bigmodel.cn/api/paas/v4` |
 | Model | `glm-5.3-flash` |
 | Key 环境变量 | `FUNCGUARD_LLM_API_KEY`（也支持 `ZAI_API_KEY` / `ZHIPUAI_API_KEY` / `OPENAI_API_KEY`） |
-| 最大输出 | 4096 tokens（`FUNCGUARD_LLM_MAX_TOKENS`） |
-| 单样本总超时 | 300 s（`FUNCGUARD_AGENT_TIMEOUT`） |
-| 单次模型请求超时 | 120 s（`FUNCGUARD_LLM_TIMEOUT`） |
+| 最大输出 | 16384 tokens（`FUNCGUARD_LLM_MAX_TOKENS`） |
+| 单样本总超时 | 600 s（`FUNCGUARD_AGENT_TIMEOUT`） |
+| 单次模型请求超时 | 180 s（`FUNCGUARD_LLM_TIMEOUT`） |
 
 - 启动时自动读取仓库根目录的 `.env.local` 与 `.env`，真实环境变量优先；这两个文件不入库。
 - `FUNCGUARD_LLM_PROVIDER=auto`（默认）：有 key 时使用真实模型，无 key 时回退 stub；设为 `zhipu` / `openai` / `glm` 时缺少 key 会直接报错。
@@ -103,17 +103,24 @@ $env:FUNCGUARD_GIT_PROXY = "http://127.0.0.1:7897"
 
 ## 全量评测
 
-数据就绪后，使用可断点续跑的驱动：
+数据与模型就绪后，使用可断点续跑的驱动：
 
 ```powershell
-python scripts/run_full_eval.py --cache D:\FuncGuardCache
+python scripts/run_full_eval.py
+# 数据不在默认位置时显式指定
+python scripts/run_full_eval.py --dataset cache\dataset\test.jsonl
+# 产物目录默认 cache\full-eval，可用环境变量或 --cache 覆盖
+$env:FUNCGUARD_FULL_EVAL_CACHE = "cache\full-eval"
 ```
 
+- 默认缓存目录是仓库内相对路径 `cache/full-eval`；快照、元数据与运行产物写在 `<cache>/` 下，评测结果写在 `<cache>/eval/`。不要把大仓库快照放到系统盘。
+- 知识索引固定从 `cache/knowledge/` 读取（可用 `FUNCGUARD_KNOWLEDGE_DIR` 覆盖），执行前需先按「知识库检索」构建。
 - 按仓库分组准备快照，跑完一个仓库后删除该仓库的快照与 git 克隆，避免 TensorFlow 等大仓库占满磁盘。
 - 每跑完一个样本就原子写入 `predictions.jsonl` / `status.jsonl`；中断后重跑会跳过已完成样本。
-- 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `D:\FuncGuardCache\eval\`：
+- 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `<cache>/eval/`：
   `full-result.jsonl`、`eval-report.json`、`official-evaluation.txt`、`summary.json`、`run.log`。
-- 建议把 `--cache` 放在空间充足的盘；快照是 Git 归档的完整源码树，单个大仓库可能占用数十 GB。
+- 进度查看：`python scripts/eval_progress.py --cache cache\full-eval`（加 `--follow` 每 10 秒刷新）。
+- **当前状态：待确认（队友报告进行中，未经核实）；驱动已就绪，结果只写 `cache/`，不入库。** 参数与注意事项详见 [P7 交接文档](docs/handoff/2026-11-24-p7-real-model-eval.md)。
 
 ## 知识库检索
 

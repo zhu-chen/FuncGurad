@@ -6,8 +6,11 @@
 - 逐样本隔离：单个样本失败只记为 fallback（prediction=0），不中断全量。
 
 用法（在仓库根目录）：
-    python scripts/run_full_eval.py --cache D:/FuncGuardCache
-    python scripts/run_full_eval.py --cache D:/FuncGuardCache --only-repos ImageMagick__ImageMagick6
+    python scripts/run_full_eval.py
+    python scripts/run_full_eval.py --cache cache/full-eval --only-repos ImageMagick__ImageMagick6
+
+缺省缓存目录是仓库内相对路径 cache/full-eval，可用环境变量
+FUNCGUARD_FULL_EVAL_CACHE 或 --cache 覆盖。
 """
 
 from __future__ import annotations
@@ -70,8 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--cache",
         type=Path,
-        default=Path(os.getenv("FUNCGUARD_FULL_EVAL_CACHE", r"D:/FuncGuardCache")),
-        help="快照/元数据/运行产物目录（建议放在空间充足的盘）",
+        default=Path(
+            os.getenv("FUNCGUARD_FULL_EVAL_CACHE", str(ROOT / "cache" / "full-eval"))
+        ),
+        help="快照/元数据/运行产物目录；默认 cache/full-eval",
     )
     parser.add_argument("--workers", type=int, default=4, help="快照准备并发数")
     parser.add_argument(
