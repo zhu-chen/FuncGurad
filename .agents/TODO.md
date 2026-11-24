@@ -37,7 +37,7 @@
 - 目录：`tests/`
 - 依赖：pytest（新增 `requirements-dev.txt`；未改 `requirements.txt`）；全部用例用 `tmp_path` 造夹具，不依赖本机课程数据、快照、索引、网络或 key。
 - 完成判据：`pytest` 全绿并覆盖上述五块；一条命令可跑；测试数据不含测试集或知识库原文。
-- 状态：基本完成（2026-11-24，分支 `test/baseline`）。已覆盖：`bench/score.py` 四类计数/等级/降级、`bench/dataset.py` 读取校验、`SnapshotGuard` 与三个只读工具越界拒绝、Agent 证据门控/最大步数/总超时、`result.jsonl`/`report.json`/`trace.jsonl` 契约、RAG 索引与检索、API 降级与 503。实测 `pytest -q`：90 passed / 1 skipped / 1 xfailed。
+- 状态：基本完成（2026-11-24，分支 `test/baseline`，待合并进 `main`）。已覆盖：`bench/score.py` 四类计数/等级/降级、`bench/dataset.py` 读取校验、`SnapshotGuard` 与三个只读工具越界拒绝、Agent 证据门控/最大步数/总超时、`result.jsonl`/`report.json`/`trace.jsonl` 契约、RAG 索引与检索、API 降级与 503。实测 `pytest -q`：90 passed / 1 skipped / 1 xfailed。
 - 仍未覆盖：真实模型与 300 条评测、`repo_service` 快照与函数定位、`scripts/` 全量驱动、前端 `web/`、CLI 端到端、SSE 轨迹时序。
 - 已知缺陷：`backend/agent/loop.py` 的 `hit_max_steps` 分支不可达，步数耗尽时恒为 False；已用 `xfail(strict=True)` 记录，未改生产代码。
 - 认领人：当前认领者
