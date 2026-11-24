@@ -32,7 +32,8 @@
 - 真实模型接入任务已完成：模型接口为 `https://open.bigmodel.cn/api/paas/v4`，模型为 `glm-5.3-flash`，已跑通 function calling 与完整 Agent 闭环。`https://agent-api.bigmodel.cn/api/agent/managed` 是 Managed Agents（云端托管 Agent）接口，不是模型对话接口；本次没有接入 Managed Agents 这一产品形态，但不影响模型接入任务的完成。
 - 已完成 provider 直连、Agent 闭环、CLI 编排和 `/api/health` 冒烟验证；
 - 本次改动已于 2026.11.23 提交为 `7954aa4`，直接推送到 `main`（未走 PR）。
-- 2026.11.24 更正：全量评测驱动已随该提交入库，但**尚未执行，无结果文件**；此前“正在跑 300 条全量评测”的记录作废。
+- 大伙注意：正在跑 300 条全量评测。
+- 2026.11.24 补记：上述评测状态由提交者本人确认，本轮未核实，不作废止；项目约定 `cache/` 不入库，仓库内看不到评测产物属于正常现象，不能据此判断没人在跑。
 
 ## 基础链路（P1 / P2）
 

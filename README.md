@@ -14,9 +14,9 @@
 | 图形界面与后端接口 | 已完成 | Vue3 单页 + FastAPI；单条/批量/报告/轨迹/知识库检索接口，产物落 `cache/runs/` |
 | 知识库 / RAG | 已完成（BM25） | 严格泄漏隔离（阈值 0.5）+ 知识卡片 + 纯 Python BM25；7,497 条入索引，单次检索约 20 ms；无向量检索 |
 | 真实模型接入 | 已完成（需本地 key） | 已接入 GLM-5.3-Flash（智谱 OpenAI 兼容接口）；未配置 key 时自动回退 stub |
-| 全量评测 | 待执行 | 驱动已就绪（`scripts/run_full_eval.py`，断点续跑）；尚未执行，无结果文件 |
+| 全量评测 | 状态待确认 | 驱动已就绪（`scripts/run_full_eval.py`，断点续跑）；队友报告进行中，未经核实，结果只写 `cache/` |
 
-> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测的驱动已就绪，但尚未执行、无结果文件；执行后再补充 P-C/P-V/P-B/P-R 与等级。
+> 仓库不包含 API key。配置 `.env.local` 后使用真实模型；未配置时结论由 stub provider 生成，仅用于验证链路，**不代表真实检测能力**。300 条全量评测的驱动已就绪，当前状态待确认（队友报告进行中，未经核实）；评测产物只写 `cache/`、不入库，仓库里看不到结果属正常，结果确认后再补充 P-C/P-V/P-B/P-R 与等级。
 
 ## 快速开始
 
@@ -120,7 +120,7 @@ $env:FUNCGUARD_FULL_EVAL_CACHE = "cache\full-eval"
 - 结束后自动运行 `bench.score` 与官方 `dataset/evaluation.py`，产物在 `<cache>/eval/`：
   `full-result.jsonl`、`eval-report.json`、`official-evaluation.txt`、`summary.json`、`run.log`。
 - 进度查看：`python scripts/eval_progress.py --cache cache\full-eval`（加 `--follow` 每 10 秒刷新）。
-- **当前状态：驱动已就绪，尚未执行，无结果文件。** 参数与注意事项详见 [P7 交接文档](docs/handoff/2026-11-24-p7-real-model-eval.md)。
+- **当前状态：待确认（队友报告进行中，未经核实）；驱动已就绪，结果只写 `cache/`，不入库。** 参数与注意事项详见 [P7 交接文档](docs/handoff/2026-11-24-p7-real-model-eval.md)。
 
 ## 知识库检索
 
