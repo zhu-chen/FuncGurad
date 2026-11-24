@@ -210,7 +210,7 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/knowledge/search?q=CVE-2014-9028%20
 
 | # | 任务 | 目标 | 改哪里 | 依赖 | 验收标准 |
 |---|---|---|---|---|---|
-| 1 | 接真实模型跑通一对 | 用 OpenAI 兼容模型跑 1 对样本（194989 / 218785），产出非 stub 报告 | `backend/agent/`、provider 配置 | 模型 key | `is_stub=false`；`trace.jsonl` 有真实 `llm_step`；报告可复现；失败时给出可读错误 |
+| 1 | 接真实模型跑通一对 | 用 OpenAI 兼容模型跑 1 对样本（194989 / 218785），产出非 stub 报告 | `backend/agent/`、provider 配置 | 模型 key | `is_stub=false`；`trace.jsonl` 有真实 `llm_step`；报告可复现；失败时给出可读错误（2026-11-24 已完成并合并） |
 | 2 | 300 条全量评测 | 跑完 150 对，输出 P-C / P-V / P-B / P-R 与混淆矩阵 | `bench/`、`backend/api/` | 任务 1 的真实模型 | `EvalReport` 覆盖 300 条；给出整体指标、失败样本列表与运行日志 |
 | 3 | 向量检索 / hybrid | 离线 embedding 接入，BM25 + 向量融合 | `rag/`（新增 embedder、hybrid retriever） | 模型权重与磁盘 | `manifest.retriever=hybrid`；自测不劣于 BM25；记录构建时间与体积；未装依赖时仍能回退 BM25 |
 | 4 | 高相似样本处置复核 | 数据或阈值变化后重跑审计，确认残余仍为 0 | `knowledge/`、`rag/` | 新知识库/新测试集 | `audit` 残余 0 对；剔除清单可复现；报告数字同步 |

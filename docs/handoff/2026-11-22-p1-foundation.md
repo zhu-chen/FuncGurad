@@ -93,9 +93,9 @@ python cache/dataset/evaluation.py --dataset cache/dataset/test.jsonl --result c
 
 1. P1：补 `bench/fixtures/subset20.jsonl` 与分层统计（项目 / 函数长度 / CWE）。
 2. P1：把六个契约接入校验脚本，生成结果后先校验再评分。
-3. P2：先打通 3 个仓库（ImageMagick / gpac / tensorflow 各 1 个 commit）的原生 git 快照链路。
+3. P2：先打通 3 个仓库（ImageMagick / gpac / tensorflow 各 1 个 commit）的原生 git 快照链路。（2026-11-24 已完成并合并）
 4. P4：起 FastAPI 空壳与 mock SSE，让 P5 可以对着 `TraceEvent` 契约开发。
-5. P5：起 Vue3 工程与运行页，先用 mock 轨迹，不等后端。
+5. P5：起 Vue3 工程与运行页，先用 mock 轨迹，不等后端。（2026-11-24 已完成并合并）
 
 ## 下一步可认领的任务
 
