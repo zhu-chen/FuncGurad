@@ -1,10 +1,9 @@
 # tests
 
-安装测试依赖后运行（在仓库根目录）：
+按 [README 的 Python 环境说明](../README.md#python-环境)用 uv 或 pip 安装运行依赖和测试依赖，然后在仓库根目录的已激活环境中运行：
 
 ```powershell
-python -m pip install -r requirements-dev.txt
-pytest -q
+python -m pytest -q
 ```
 
 `pytest.ini` 已把收集范围限定在 `tests/`，避免扫描 `cache/` 下的上千个运行产物。

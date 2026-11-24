@@ -20,11 +20,25 @@
 
 ## 快速开始
 
-需要 Python 3.9+。
+### Python 环境
+
+需要 Python 3.9+。推荐使用 uv，也支持标准库 venv 和 pip。两种方式共用 `requirements.txt`（运行依赖）和 `requirements-dev.txt`（额外的测试依赖）。增减依赖时编辑对应文件即可。
+
+在仓库根目录按下表配置环境。已有 `.venv` 时直接从激活步骤开始。
+
+| 步骤 | uv（推荐） | venv + pip |
+|---|---|---|
+| 首次创建 | `uv venv --seed .venv`（含 pip） | `python -m venv .venv` |
+| 激活（Windows PowerShell） | `.\.venv\Scripts\Activate.ps1` | `.\.venv\Scripts\Activate.ps1` |
+| 激活（Linux / macOS 的 bash 或 zsh） | `source .venv/bin/activate` | `source .venv/bin/activate` |
+| 安装运行依赖 | `uv pip install -r requirements.txt` | `python -m pip install -r requirements.txt` |
+| 开发及测试时追加 | `uv pip install -r requirements-dev.txt` | `python -m pip install -r requirements-dev.txt` |
+
+### 启动服务
+
+在已激活的环境中执行。下面以 PowerShell 为例，Linux / macOS 用户可用 `cp` 复制配置模板。
 
 ```powershell
-python -m pip install -r requirements.txt
-
 # 配置真实模型（一次性）：复制模板并填入自己的 API Key
 Copy-Item .env.example .env.local
 # 编辑 .env.local，至少设置 FUNCGUARD_LLM_API_KEY
