@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -16,6 +16,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.job_service import JobError, JobService
 from backend.config import AgentSettings
 from backend.providers.base import ProviderError
+from backend.services.adhoc_service import (
+    MAX_COMMIT_URL_CHARS,
+    MAX_FUNC_CHARS,
+    MAX_UPLOAD_CHARS,
+    AdhocError,
+    spec_from_manual,
+)
 from backend.services.sample_service import SampleServiceError
 from rag.retriever import KnowledgeIndexError, get_retriever
 from repo_service.config import REPO_ROOT
@@ -47,6 +54,31 @@ class RunRequest(BaseModel):
 class BatchRequest(BaseModel):
     idx_list: list[int] = Field(..., min_length=1, max_length=100)
     pair: bool = Field(True, description="每条 idx 是否补齐配对样本")
+
+
+class ManualRunRequest(BaseModel):
+    """手工单样本：函数代码 + 修复提交链接 + 版本。"""
+
+    func: str = Field(
+        ..., min_length=1, max_length=MAX_FUNC_CHARS, description="待检测的 C/C++ 函数"
+    )
+    commit_url: str = Field(
+        ..., min_length=1, max_length=MAX_COMMIT_URL_CHARS, description="修复提交链接"
+    )
+    version: Literal["vulnerable", "fixed"] = Field(
+        "vulnerable", description="函数来自修复前（漏洞版）还是修复后（修复版）"
+    )
+    idx: Optional[int] = Field(
+        None, ge=0, description="可选：报告展示用 idx；不填记为 0 并标注为手工样本"
+    )
+
+
+class UploadBatchRequest(BaseModel):
+    """上传 .jsonl：浏览器读文件文本后提交，后端逐行校验。"""
+
+    content: str = Field(
+        ..., min_length=1, max_length=MAX_UPLOAD_CHARS, description=".jsonl 文本内容"
+    )
 
 
 def create_app() -> FastAPI:
@@ -87,6 +119,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(ProviderError)
     def handle_provider_error(request: Request, exc: ProviderError) -> JSONResponse:
         return _error(503, f"模型 provider 不可用：{exc}", "provider_unavailable")
+
+    @app.exception_handler(AdhocError)
+    def handle_adhoc_error(request: Request, exc: AdhocError) -> JSONResponse:
+        # 手工/上传输入的校验或快照失败：请求本身不合法或依赖不可用。
+        return _error(exc.status_code, str(exc), "adhoc_error")
 
     @app.exception_handler(SampleServiceError)
     def handle_sample_error(
@@ -165,6 +202,19 @@ def create_app() -> FastAPI:
         return _ok(
             jobs.create_batch(payload.idx_list, payload.pair), status_code=202
         )
+
+    @app.post("/api/runs/manual")
+    def create_manual_run(payload: ManualRunRequest) -> JSONResponse:
+        """手工输入一个函数与修复提交链接，跑单个版本。"""
+        spec = spec_from_manual(
+            payload.func, payload.commit_url, payload.version, payload.idx
+        )
+        return _ok(jobs.create_manual_run(spec), status_code=202)
+
+    @app.post("/api/batches/upload")
+    def create_upload_batch(payload: UploadBatchRequest) -> JSONResponse:
+        """上传 .jsonl，逐条准备快照并运行；不等同于按 idx 的评分批量。"""
+        return _ok(jobs.create_upload_batch(payload.content), status_code=202)
 
     @app.get("/api/batches/{batch_id}")
     def get_batch(batch_id: str) -> JSONResponse:

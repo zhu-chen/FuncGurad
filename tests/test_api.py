@@ -163,3 +163,66 @@ def test_unknown_idx_is_rejected_by_job(tmp_path, monkeypatch):
 
     assert response.status_code == 400
     assert "不在测试集中" in response.json()["error"]["message"]
+
+def test_manual_run_validation_error(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch, dataset=tmp_path / "missing.jsonl")
+
+    response = client.post(
+        "/api/runs/manual",
+        json={"commit_url": "https://example.test/c", "version": "vulnerable"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "validation_error"
+
+
+def test_manual_run_rejects_non_http_url(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch, dataset=tmp_path / "missing.jsonl")
+
+    response = client.post(
+        "/api/runs/manual",
+        json={
+            "func": "int f(void) { return 0; }",
+            "commit_url": "ftp://example.test/c",
+            "version": "vulnerable",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "adhoc_error"
+    assert "http" in body["error"]["message"]
+
+
+def test_upload_batch_rejects_bad_jsonl(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch, dataset=tmp_path / "missing.jsonl")
+
+    response = client.post("/api/batches/upload", json={"content": "not json"})
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "adhoc_error"
+    assert "第 1 行" in body["error"]["message"]
+
+
+def test_upload_batch_rejects_duplicate_idx(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch, dataset=tmp_path / "missing.jsonl")
+    row = json.dumps(
+        {
+            "idx": 7,
+            "target": 1,
+            "commit_url": "https://example.test/c",
+            "func": "int f(void) { return 0; }",
+        }
+    )
+
+    response = client.post("/api/batches/upload", json={"content": row + "\n" + row})
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "adhoc_error"
+    assert "重复" in body["error"]["message"]
