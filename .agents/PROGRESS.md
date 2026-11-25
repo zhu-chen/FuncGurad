@@ -116,4 +116,4 @@ lukezhen 2026.11.25
 - 未改提示词顺序；已提交的 300 条评测结果对应改动前的提示词，若要改顺序需单独立项并重跑。
 - 验证：`pytest -q` 112 passed / 1 skipped / 1 xfailed（新增 18 + 4 条）；接口冒烟通过。
 - 未完成：真实模型 + 真实 GitHub 仓库的浏览器端到端演示（本机无 `.env.local`），以及检索顺序与版本身份泄漏两项课程检查。
-- 交接：`docs/handoff/2026-11-25-p8-manual-input.md`，索引已登记。
+- 交接：`docs/handoff/2026-11-25-p8-manual-input.md`，索引已登记；PR #13 已推送。

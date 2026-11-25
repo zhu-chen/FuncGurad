@@ -2,6 +2,7 @@
 
 - 日期：2026-11-25
 - 分支：`feat/p8-manual-input`
+- PR：[#13](https://github.com/zhu-chen/FuncGurad/pull/13)
 - 认领人：lukezhen
 - 关联：任务 7（[.agents/TODO.md](../../.agents/TODO.md)）、[课程要求与实现对照](2026-11-24-course-requirements.md) 第 3–7 页
 - 状态：代码与离线测试完成；真实模型 + GitHub 网络的现场演示仍需在配好 key 的机器上补一次
