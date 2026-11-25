@@ -72,6 +72,13 @@ export const api = {
   runs: (limit = 20) => request(`/runs?limit=${limit}`),
   createRun: (idx, pair = true) =>
     request('/runs', { method: 'POST', body: { idx, pair } }),
+  manualRun: ({ func, commitUrl, version = 'vulnerable', idx = null }) => {
+    const body = { func, commit_url: commitUrl, version }
+    if (idx !== null && idx !== undefined && String(idx).trim() !== '') {
+      body.idx = Number(idx)
+    }
+    return request('/runs/manual', { method: 'POST', body, timeout: 60000 })
+  },
   getRun: (runId) => request(`/runs/${encodeURIComponent(runId)}`),
   getReport: (runId) =>
     request(`/runs/${encodeURIComponent(runId)}/report`),
@@ -79,6 +86,8 @@ export const api = {
     request(`/runs/${encodeURIComponent(runId)}/trace?after=${after}`),
   createBatch: (idxList, pair = true) =>
     request('/batches', { method: 'POST', body: { idx_list: idxList, pair } }),
+  uploadBatch: (content) =>
+    request('/batches/upload', { method: 'POST', body: { content }, timeout: 120000 }),
   getBatch: (batchId) =>
     request(`/batches/${encodeURIComponent(batchId)}`),
   knowledgeSearch: (q, { topK = 5, project = '', cwe = '' } = {}) => {

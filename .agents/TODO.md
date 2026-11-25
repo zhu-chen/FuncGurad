@@ -2,30 +2,11 @@
 
 > 使用约定：开工前在对应条目注明认领人与日期；收工前更新状态，并在 `docs/handoff/` 写交接文档。`cache/` 产物不入库，看不到结果不代表没人在跑，动某项前先确认归属。
 
-> 现状（2026-11-24）：除“300 条全量评测”由队友进行中（未确认）外，其余条目均无人认领，可直接接手。
+> 现状（2026.11.25）：任务 7（课程图形输入）已完成并登记交接；任务 2、4、5 无人认领可直接接手；任务 6 按需触发。真实模型单对验证、300 条全量评测、单元测试基线已完成，见下方「已完成」。
 
 > 每条任务写清：目标 / 目录 / 依赖 / 完成判据 / 状态 / 认领人。
 >
 > 认领人请务必写清楚具体可识别的名称，而不是当前协作者一类的内容，否则会导致认领人不明确，影响任务流转。
-
-## 0. 真实模型单对验证（DeepSeek）
-
-- 目标：用 DeepSeek（OpenAI 兼容）跑通 idx=194989 与其配对 218785，确认 `is_stub=false`，记录两版 prediction、P-x 分类、步数、耗时与 token 用量。
-- 目录：`backend/`（只验证，不改 Agent 循环与门控）；产物写 `cache/runs/`。
-- 依赖：真实模型凭证（只放进程环境变量，不入库）、`cache/dataset/test.jsonl`、两条样本快照。
-- 完成判据：`result.jsonl` 两行且只有 `idx` / `prediction`；`report.json` 的 `is_stub=false`；成本与耗时记录在回报中。
-- 状态：已完成（2026-11-24）
-- 结论：真实 provider 已跑通（`is_stub=false`）；idx 194989（漏洞版）prediction=0、218785（修复版）prediction=1，属 P-R，两版均判错。产物只在 `cache/`、不入库；复现需自行配置 key。该结论只限这一对，不构成检测能力结论。
-- 认领人：当前协作者（这是哪位xd，麻烦写一下具体名字）
-
-## 1. 300 条全量评测
-
-- 目标：跑完 150 对（300 条），产出 P-C / P-V / P-B / P-R 与等级。
-- 目录：`scripts/`、`bench/`；产物写 `<cache>/eval/`（默认 `cache/full-eval/eval/`）。
-- 依赖：真实模型 key；磁盘空间（单个大仓库快照可达数十 GB）；已构建的知识索引 `cache/knowledge/`；`dataset/test.jsonl`。开跑前需与认领人本人确认，避免重复。
-- 完成判据：`summary.json` 覆盖 300 条；`eval-report.json` 有四项指标与等级；失败样本列表与 `run.log` 可回溯；结果写进交接文档。
-- 状态：由队友进行中（未确认）— 其他人不要重复开跑
-- 认领人：队友（待确认）（这是哪位xd，麻烦写一下具体名字）
 
 ## 2. 向量 / 混合检索
 
@@ -35,17 +16,6 @@
 - 完成判据：`manifest.retriever=hybrid`；自测不劣于 BM25；记录构建时间与体积；缺依赖时自动回退并有可读提示。
 - 状态：未认领（可直接开工）
 - 认领人：—
-
-## 3. 单元测试基线
-
-- 目标：给核心链路补最小回归测试（契约字段、审计阈值、BM25 检索、API 错误码、CLI check）。
-- 目录：`tests/`
-- 依赖：pytest（新增 `requirements-dev.txt`；未改 `requirements.txt`）；全部用例用 `tmp_path` 造夹具，不依赖本机课程数据、快照、索引、网络或 key。
-- 完成判据：`pytest` 全绿并覆盖上述五块；一条命令可跑；测试数据不含测试集或知识库原文。
-- 状态：已完成并合并（2026-11-24），当前 `main` 见仓库 HEAD。已覆盖：`bench/score.py` 四类计数/等级/降级、`bench/dataset.py` 读取校验、`SnapshotGuard` 与三个只读工具越界拒绝、Agent 证据门控/最大步数/总超时、`result.jsonl`/`report.json`/`trace.jsonl` 契约、RAG 索引与检索、API 降级与 503。实测 `pytest -q`：90 passed / 1 skipped / 1 xfailed。
-- 仍未覆盖：真实模型与 300 条评测、`repo_service` 快照与函数定位、`scripts/` 全量驱动、前端 `web/`、CLI 端到端、SSE 轨迹时序。
-- 已知缺陷：`backend/agent/loop.py` 的 `hit_max_steps` 分支不可达，步数耗尽时恒为 False；已用 `xfail(strict=True)` 记录，未改生产代码。
-- 认领人：当前协作者（这是哪位xd，麻烦写一下具体名字）
 
 ## 4. 确定仓库结构（遗留）
 
@@ -74,16 +44,18 @@
 - 状态：未认领（可直接开工）；当前基线 7,497 条、残余 0
 - 认领人：—
 
-## 7. 课程图形输入与分析流程验收
+## 已完成
 
-- 目标：补齐函数代码与修复提交链接的单样本入口，以及批量上传 `.jsonl` 的入口。按课件核对先检索再初判、按需读取仓库的顺序，并确认自建循环满足 Agent 框架要求。
-- 目录：`web/`、`backend/`。依赖与现状见[课程要求与实现对照](../docs/handoff/2026-11-24-course-requirements.md)。
-- 完成判据：两种输入均能独立处理各样本，用户能查看当次知识检索与按需读仓轨迹，报告包含 idx、判定、理由与分析记录。
-- 状态：未认领（2026.11.24）
-- 认领人：—
+### 2026.11.25
 
-## 已完成（2026.11.24，已合并）
+- 任务 7 课程图形输入（lukezhen）：补齐手工函数 + 修复提交链接、上传 `.jsonl` 两条通路；新增 `POST /api/runs/manual`、`POST /api/batches/upload` 与界面入口，测试 112 passed。见 [P8 图形输入](../docs/handoff/2026-11-25-p8-manual-input.md)。尚未完成真实模型浏览器端到端演示、检索顺序调整。
+- 清账：把原 0（真实模型单对验证）、1（300 条全量评测）、3（单元测试基线）从待办移入本区，状态与 PROGRESS/README/交接索引对齐。
 
+### 2026.11.24
+
+- 真实模型单对验证（DeepSeek，idx 194989 / 218785）：provider 跑通、`is_stub=false`；两版均判反（P-R），结论只限这一对。产物只在 `cache/`。
+- 300 条全量评测（GLM-5.3-Flash）：300/300 预测、150/150 配对；P-C 55 / P-V 67 / P-B 20 / P-R 8，等级 A；真实快照 194 条、合成兜底 106 条。见 [P7 全量评测](../docs/handoff/2026-11-24-p7-full-eval.md)。
+- 单元测试基线：`pytest -q` 90 passed / 1 skipped / 1 xfailed；覆盖评分、数据集读取、快照守卫、Agent 门控与步数、契约、RAG、API。已知缺陷 `hit_max_steps` 用 `xfail(strict=True)` 记录，未改生产代码。
 - README 与 `backend/config.py` 数字对齐：16384 tokens / 600 s / 180 s。
 - 本机绝对路径清理：`scripts/run_full_eval.py`、`scripts/eval_progress.py`、README 不再写死本机盘符评测缓存路径。
 - P7 交接文档补写：`docs/handoff/2026-11-24-p7-real-model-eval.md`，并登记到索引。

@@ -214,6 +214,15 @@ textarea {
   flex: 1;
 }
 
+.manual-meta {
+  margin-top: 8px;
+}
+
+.manual-meta select,
+.manual-meta input {
+  flex: 1;
+}
+
 button {
   cursor: pointer;
   border-radius: 8px;
@@ -310,7 +319,8 @@ hr {
   color: var(--muted);
 }
 
-.badge.running {
+.badge.running,
+.badge.preparing_snapshot {
   color: var(--accent-2);
   border-color: rgba(122, 162, 255, 0.5);
 }

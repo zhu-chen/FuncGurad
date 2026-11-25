@@ -1,6 +1,10 @@
 """HTTP 层任务编排：单条/批量运行在后台线程执行，结果落 cache/runs/<run_id>/。
 
 前端只通过 API 读取状态、报告与轨迹，不在浏览器里做任何业务判断。
+任务分两类：
+- `dataset`：按测试集 idx 运行，走 `run_service`（评分链路）；
+- `manual` / `upload`：临时样本，走 `adhoc_service`（手工输入或上传 jsonl），
+  不读测试集，也不参与全量评测。
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from typing import Any
 
 from backend.config import AgentSettings
 from backend.providers import create_provider
+from backend.services.adhoc_service import AdhocSpec, parse_upload, run_adhoc
 from backend.services.run_service import run as run_samples
 from backend.services.sample_service import load_dataset
 from repo_service.config import display_path
@@ -101,7 +106,7 @@ class JobService:
                 break
         return pairs
 
-    # ---------- 单条运行 ----------
+    # ---------- 单条运行（测试集） ----------
 
     def create_run(self, idx: int, pair_mode: bool = True) -> dict[str, Any]:
         _, index = load_dataset(self.dataset_path)
@@ -110,6 +115,17 @@ class JobService:
         self.provider_info()  # 显式 openai 但缺 key 时在这里失败
 
         record = self._new_run_record(idx, pair_mode)
+        thread = threading.Thread(target=self._execute, args=(record,), daemon=True)
+        thread.start()
+        return self._public_run(record)
+
+    # ---------- 单条运行（手工样本） ----------
+
+    def create_manual_run(self, spec: AdhocSpec) -> dict[str, Any]:
+        self.provider_info()  # 显式 provider 但缺 key 时在这里失败
+        record = self._new_run_record(
+            spec.idx, pair_mode=False, mode="manual", spec=spec
+        )
         thread = threading.Thread(target=self._execute, args=(record,), daemon=True)
         thread.start()
         return self._public_run(record)
@@ -190,27 +206,26 @@ class JobService:
                 deduped.append(idx)
         self.provider_info()
 
-        batch_id = (
-            f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-"
-            f"{uuid.uuid4().hex[:6]}"
-        )
+        batch_id = self._new_batch_id()
         records = [
             self._new_run_record(idx, pair_mode, batch_id=batch_id)
             for idx in deduped
         ]
-        batch = {
-            "batch_id": batch_id,
-            "status": "queued",
-            "created_at": _now(),
-            "started_at": None,
-            "ended_at": None,
-            "idx_list": deduped,
-            "items": records,
-        }
-        with self._lock:
-            self._batches[batch_id] = batch
-        thread = threading.Thread(target=self._run_batch, args=(batch,), daemon=True)
-        thread.start()
+        return self._start_batch(batch_id, records, deduped)
+
+    def create_upload_batch(self, content: str) -> dict[str, Any]:
+        """上传 .jsonl：逐条转成临时样本，后台串行执行。"""
+        specs = parse_upload(content)  # 解析失败抛 AdhocError，由 app 层转 400
+        self.provider_info()
+
+        batch_id = self._new_batch_id()
+        records = [
+            self._new_run_record(
+                spec.idx, pair_mode=False, batch_id=batch_id, mode="upload", spec=spec
+            )
+            for spec in specs
+        ]
+        batch = self._register_batch(batch_id, records, [spec.idx for spec in specs])
         return self._public_batch(batch)
 
     def get_batch(self, batch_id: str) -> dict[str, Any]:
@@ -222,8 +237,50 @@ class JobService:
 
     # ---------- 内部 ----------
 
+    @staticmethod
+    def _new_batch_id() -> str:
+        return (
+            f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-"
+            f"{uuid.uuid4().hex[:6]}"
+        )
+
+    def _start_batch(
+        self,
+        batch_id: str,
+        records: list[dict[str, Any]],
+        idx_list: list[int],
+    ) -> dict[str, Any]:
+        batch = self._register_batch(batch_id, records, idx_list)
+        return self._public_batch(batch)
+
+    def _register_batch(
+        self,
+        batch_id: str,
+        records: list[dict[str, Any]],
+        idx_list: list[int],
+    ) -> dict[str, Any]:
+        batch = {
+            "batch_id": batch_id,
+            "status": "queued",
+            "created_at": _now(),
+            "started_at": None,
+            "ended_at": None,
+            "idx_list": idx_list,
+            "items": records,
+        }
+        with self._lock:
+            self._batches[batch_id] = batch
+        thread = threading.Thread(target=self._run_batch, args=(batch,), daemon=True)
+        thread.start()
+        return batch
+
     def _new_run_record(
-        self, idx: int, pair_mode: bool, batch_id: str | None = None
+        self,
+        idx: int,
+        pair_mode: bool,
+        batch_id: str | None = None,
+        mode: str = "dataset",
+        spec: AdhocSpec | None = None,
     ) -> dict[str, Any]:
         run_id = (
             f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{idx}-"
@@ -238,6 +295,11 @@ class JobService:
             "requested_idx": idx,
             "pair_mode": pair_mode,
             "batch_id": batch_id,
+            "mode": mode,
+            "version": spec.version if spec else None,
+            "commit_url": spec.commit_url if spec else None,
+            "provided_idx": spec.provided_idx if spec else True,
+            "stage": None,
             "status": "queued",
             "created_at": _now(),
             "started_at": None,
@@ -245,6 +307,7 @@ class JobService:
             "error": None,
             "output_dir": display_path(output_dir),
             "_output_dir": str(output_dir),
+            "_spec": spec,
             "is_stub": self.provider_info()["is_stub"],
         }
         with self._lock:
@@ -252,8 +315,15 @@ class JobService:
         return record
 
     def _execute(self, record: dict[str, Any]) -> None:
+        if record.get("_spec") is not None:
+            self._execute_adhoc(record)
+            return
+        self._execute_dataset(record)
+
+    def _execute_dataset(self, record: dict[str, Any]) -> None:
         with self._lock:
             record["status"] = "running"
+            record["stage"] = "running"
             record["started_at"] = _now()
         try:
             payload = run_samples(
@@ -265,6 +335,7 @@ class JobService:
             )
             with self._lock:
                 record["status"] = "done"
+                record["stage"] = "done"
                 record["ended_at"] = _now()
                 record["pair"] = payload.get("pair")
                 record["provider"] = payload.get("provider")
@@ -274,8 +345,49 @@ class JobService:
         except Exception as exc:  # 单条失败不拖垮批量
             with self._lock:
                 record["status"] = "failed"
+                record["stage"] = "failed"
                 record["ended_at"] = _now()
                 record["error"] = f"{type(exc).__name__}: {exc}"
+
+    def _execute_adhoc(self, record: dict[str, Any]) -> None:
+        """临时样本：先准备快照再跑 Agent，阶段写进 status 供前端展示。"""
+
+        def on_progress(stage: str) -> None:
+            with self._lock:
+                record["status"] = stage
+                record["stage"] = stage
+
+        with self._lock:
+            record["status"] = "queued"
+            record["stage"] = "queued"
+            record["started_at"] = _now()
+        try:
+            payload = run_adhoc(
+                [record["_spec"]],
+                self.settings,
+                output_dir=Path(record["_output_dir"]),
+                mode=record["mode"],
+                on_progress=on_progress,
+            )
+            failures = payload.get("failures") or []
+            if failures:
+                raise JobError(failures[0]["error"], 422)
+            with self._lock:
+                record["status"] = "done"
+                record["stage"] = "done"
+                record["ended_at"] = _now()
+                record["provider"] = payload.get("provider")
+                record["is_stub"] = (payload.get("provider") or {}).get(
+                    "is_stub", record.get("is_stub", False)
+                )
+        except Exception as exc:  # 快照准备或 Agent 失败只影响本条
+            with self._lock:
+                record["status"] = "failed"
+                record["stage"] = "failed"
+                record["ended_at"] = _now()
+                record["error"] = (
+                    str(exc) if isinstance(exc, JobError) else f"{type(exc).__name__}: {exc}"
+                )
 
     def _run_batch(self, batch: dict[str, Any]) -> None:
         with self._lock:

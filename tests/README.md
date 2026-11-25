@@ -18,11 +18,12 @@ python -m pytest -q
 | `test_agent_loop.py` | 无证据的 vulnerable 降级为 benign、最大步数与总超时保护 |
 | `test_contract_artifacts.py` | `result.jsonl` 只有 `idx`/`prediction`，三个运行产物齐全、trace 合规 |
 | `test_rag_retriever.py` | 索引加载、top-k、项目/CWE 过滤、缺索引与空查询的可读错误 |
-| `test_api.py` | 缺数据时 `/api/health` 200+degraded、写接口 503、有数据时结构稳定 |
+| `test_api.py` | 缺数据时 `/api/health` 200+degraded、写接口 503、有数据时结构稳定；手工/上传接口的 422/400 错误码 |
+| `test_adhoc.py` | 手工与上传样本的输入校验、`.jsonl` 逐行解析、离线跑通 `result.jsonl` / `report.json` / `trace.jsonl` 契约 |
 
 ## 课程验收
 
-课程验收还需通过图形界面实际提交一个函数及其修复提交链接，再上传一份批量 `.jsonl`，核对运行中的检索与读仓轨迹以及最终报告。现有离线用例覆盖评分、工具边界和产物契约，图形输入、检索顺序、指定提交的选择和真实模型全量结果需单独验证。见[课程要求与实现对照](../docs/handoff/2026-11-24-course-requirements.md)。
+课程验收还需通过图形界面实际提交一个函数及其修复提交链接，再上传一份批量 `.jsonl`，核对运行中的检索与读仓轨迹以及最终报告。两条输入通路已实现（任务 7，见 [P8 图形输入](../docs/handoff/2026-11-25-p8-manual-input.md)），离线用例覆盖接口校验与产物契约；**浏览器端到端、指定提交的选择、检索顺序和真实模型演示仍需单独验证**。见[课程要求与实现对照](../docs/handoff/2026-11-24-course-requirements.md)。
 
 ## 数据依赖
 

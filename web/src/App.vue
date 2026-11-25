@@ -11,6 +11,15 @@ const selectedPair = ref('')
 const batchInput = ref('194989\n218785')
 const batchSubmitting = ref(false)
 
+const manualFunc = ref('')
+const manualUrl = ref('')
+const manualVersion = ref('vulnerable')
+const manualIdx = ref('')
+const manualSubmitting = ref(false)
+const uploadName = ref('')
+const uploadText = ref('')
+const uploadSubmitting = ref(false)
+
 const batch = ref(null)
 const currentRun = ref(null)
 const events = ref([])
@@ -36,7 +45,9 @@ let toastTimer = null
 
 const stub = computed(() => Boolean(health.value?.provider?.is_stub))
 const running = computed(
-  () => currentRun.value && ['queued', 'running'].includes(currentRun.value.status)
+  () =>
+    currentRun.value &&
+    ['queued', 'preparing_snapshot', 'running'].includes(currentRun.value.status)
 )
 
 const TYPE_LABELS = {
@@ -48,6 +59,19 @@ const TYPE_LABELS = {
   run_end: 'END',
   error: 'ERROR',
   knowledge_search: 'KNOWLEDGE',
+}
+
+const STATUS_LABELS = {
+  queued: '排队',
+  preparing_snapshot: '准备快照',
+  running: '运行中',
+  done: '完成',
+  failed: '失败',
+  partial_failed: '部分失败',
+}
+
+function statusLabel(status) {
+  return STATUS_LABELS[status] || status || ''
 }
 
 const runLabels = computed(() => {
@@ -289,6 +313,81 @@ function runPair() {
   startRun(idx)
 }
 
+function applyRun(run) {
+  currentRun.value = run
+  events.value = []
+  traceAfter.value = 0
+  report.value = null
+  resultRecords.value = []
+  expanded.value = new Set()
+}
+
+async function runManual() {
+  const func = manualFunc.value.trim()
+  const commitUrl = manualUrl.value.trim()
+  if (!func) {
+    showToast('请粘贴待检测的函数代码')
+    return
+  }
+  if (!commitUrl) {
+    showToast('请填写修复提交链接')
+    return
+  }
+  const idxText = String(manualIdx.value ?? '').trim()
+  const idx = idxText === '' ? null : Number(idxText)
+  if (idx !== null && (!Number.isInteger(idx) || idx < 0)) {
+    showToast('idx 需为 >= 0 的整数，或留空')
+    return
+  }
+  manualSubmitting.value = true
+  try {
+    const run = await api.manualRun({
+      func,
+      commitUrl,
+      version: manualVersion.value,
+      idx,
+    })
+    applyRun(run)
+    showToast('已提交手工样本：正在准备快照…')
+    startRunPolling()
+    loadRecent()
+  } catch (error) {
+    fail(error)
+  } finally {
+    manualSubmitting.value = false
+  }
+}
+
+async function handleUpload(event) {
+  const file = event.target.files?.[0]
+  uploadName.value = file ? file.name : ''
+  uploadText.value = ''
+  if (!file) return
+  try {
+    uploadText.value = await file.text()
+    showToast(`已读取 ${file.name}`)
+  } catch (error) {
+    fail(error)
+  }
+}
+
+async function submitUpload() {
+  if (!uploadText.value) {
+    showToast('请先选择 .jsonl 文件')
+    return
+  }
+  uploadSubmitting.value = true
+  try {
+    batch.value = await api.uploadBatch(uploadText.value)
+    showToast(`已提交 ${batch.value.total} 条上传样本`)
+    startBatchPolling()
+  } catch (error) {
+    fail(error)
+  } finally {
+    uploadSubmitting.value = false
+  }
+}
+
 async function openRun(runId) {
   stopRunPolling()
   try {
@@ -303,7 +402,10 @@ async function openRun(runId) {
       await pollRun()
     } else {
       await pollRun()
-      if (currentRun.value && ['queued', 'running'].includes(currentRun.value.status)) {
+      if (
+        currentRun.value &&
+        ['queued', 'preparing_snapshot', 'running'].includes(currentRun.value.status)
+      ) {
         startRunPolling()
       }
     }
@@ -474,6 +576,47 @@ onBeforeUnmount(() => {
 
         <hr />
 
+        <h2>手工样本</h2>
+        <p class="hint">
+          粘贴一个版本的函数与修复提交链接。每次只分析一个版本，版本角色由你选择。
+        </p>
+        <label>函数代码</label>
+        <textarea
+          v-model="manualFunc"
+          rows="6"
+          class="code-input"
+          placeholder="int demo(char *dst, int len) { ... }"
+        ></textarea>
+        <label>修复提交链接</label>
+        <input
+          v-model="manualUrl"
+          placeholder="https://github.com/owner/repo/commit/<sha>"
+        />
+        <div class="row manual-meta">
+          <select v-model="manualVersion">
+            <option value="vulnerable">修复前（漏洞版）</option>
+            <option value="fixed">修复后（修复版）</option>
+          </select>
+          <input
+            v-model="manualIdx"
+            type="number"
+            min="0"
+            placeholder="idx（可选，报告用）"
+          />
+        </div>
+        <button
+          class="primary"
+          :disabled="manualSubmitting || running"
+          @click="runManual"
+        >
+          {{ manualSubmitting ? '提交中…' : '运行手工样本' }}
+        </button>
+        <p class="hint">
+          首次运行会按提交链接准备仓库快照，大仓库可能需要数分钟；状态显示「准备快照」时属正常等待。
+        </p>
+
+        <hr />
+
         <h2>批量任务</h2>
         <textarea
           v-model="batchInput"
@@ -484,10 +627,30 @@ onBeforeUnmount(() => {
           {{ batchSubmitting ? '提交中…' : '提交批量' }}
         </button>
 
+        <hr />
+
+        <h2>上传 .jsonl</h2>
+        <p class="hint">
+          每行一条样本，字段为 idx / target / commit_url / func。与按 idx 的批量不同，这里不要求按对出现。
+        </p>
+        <input
+          type="file"
+          accept=".jsonl,application/json"
+          @change="handleUpload"
+        />
+        <p v-if="uploadName" class="small mono">已选择：{{ uploadName }}</p>
+        <button
+          class="ghost"
+          :disabled="uploadSubmitting || !uploadText"
+          @click="submitUpload"
+        >
+          {{ uploadSubmitting ? '提交中…' : '上传并检测' }}
+        </button>
+
         <div v-if="batch" class="batch">
           <div class="batch-head">
             <strong>批量 {{ batch.batch_id }}</strong>
-            <span class="badge" :class="batch.status">{{ batch.status }}</span>
+            <span class="badge" :class="batch.status">{{ statusLabel(batch.status) }}</span>
           </div>
           <p class="small">
             {{ batch.done }}/{{ batch.total }} 完成
@@ -495,7 +658,7 @@ onBeforeUnmount(() => {
           </p>
           <ul class="batch-list">
             <li v-for="item in batch.items" :key="item.run_id">
-              <span class="badge" :class="item.status">{{ item.status }}</span>
+              <span class="badge" :class="item.status">{{ statusLabel(item.status) }}</span>
               <span class="mono small">idx {{ item.requested_idx }}</span>
               <span v-if="item.pair_category" class="cat">{{ item.pair_category }}</span>
               <button
@@ -517,7 +680,7 @@ onBeforeUnmount(() => {
             class="link recent-item"
             @click="openRun(run.run_id)"
           >
-            <span class="badge" :class="run.status">{{ run.status }}</span>
+            <span class="badge" :class="run.status">{{ statusLabel(run.status) }}</span>
             <span class="mono small">{{ run.run_id }}</span>
             <span v-if="run.pair_category" class="cat">{{ run.pair_category }}</span>
           </button>
@@ -574,7 +737,7 @@ onBeforeUnmount(() => {
         <div class="panel-head">
           <h2>3. 报告</h2>
           <span v-if="currentRun" class="badge" :class="currentRun.status">
-            {{ currentRun.status }}
+            {{ statusLabel(currentRun.status) }}
           </span>
         </div>
 
