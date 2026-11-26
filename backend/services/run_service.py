@@ -140,6 +140,7 @@ def run(
                 "steps": outcome.steps,
                 "llm_steps": outcome.llm_steps,
                 "tool_calls": outcome.tool_calls,
+                "flow": outcome.flow,
                 "timed_out": outcome.timed_out,
                 "hit_max_steps": outcome.hit_max_steps,
                 "evidence_gate": outcome.gate,

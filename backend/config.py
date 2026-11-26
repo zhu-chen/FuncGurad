@@ -82,6 +82,7 @@ class AgentSettings:
     max_read_lines: int
     max_scan_files: int
     max_tool_content_chars: int
+    prompt_profile: str = "retrieval_first"
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -111,6 +112,12 @@ class AgentSettings:
         runs_dir = Path(
             os.getenv("FUNCGUARD_AGENT_RUNS_DIR", str(cache_dir / "runs"))
         ).resolve()
+        prompt_profile = (
+            os.getenv("FUNCGUARD_AGENT_PROMPT_PROFILE", "").strip().lower()
+            or "retrieval_first"
+        )
+        if prompt_profile not in ("retrieval_first", "legacy"):
+            raise ValueError("FUNCGUARD_AGENT_PROMPT_PROFILE 必须为 retrieval_first 或 legacy")
         return cls(
             max_steps=_env_int("FUNCGUARD_AGENT_MAX_STEPS", 10),
             timeout_seconds=_env_int("FUNCGUARD_AGENT_TIMEOUT", 600),
@@ -136,6 +143,7 @@ class AgentSettings:
             max_tool_content_chars=_env_int(
                 "FUNCGUARD_AGENT_MAX_TOOL_CONTENT", 16000
             ),
+            prompt_profile=prompt_profile,
         )
 
     @property

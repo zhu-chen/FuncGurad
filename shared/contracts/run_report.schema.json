@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://funcgurad.local/contracts/run_report.schema.json",
+  "title": "RunReport",
+  "description": "运行报告的逐样本流程记录。早期报告可以省略 flow。",
+  "type": "object",
+  "required": ["runs"],
+  "properties": {
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "flow": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prompt_profile", "knowledge_available", "knowledge_calls",
+              "repo_tool_calls", "first_tool", "knowledge_before_repo"
+            ],
+            "properties": {
+              "prompt_profile": {"enum": ["retrieval_first", "legacy"]},
+              "knowledge_available": {"type": "boolean"},
+              "knowledge_calls": {"type": "integer", "minimum": 0},
+              "repo_tool_calls": {"type": "integer", "minimum": 0},
+              "first_tool": {
+                "type": ["string", "null"],
+                "description": "首次执行调用的工具名。模型未提供名称时为空字符串，未执行工具调用时为 null。"
+              },
+              "knowledge_before_repo": {
+                "type": ["boolean", "null"],
+                "description": "有读仓调用时，首个检索是否早于首个读仓。无读仓调用时为 null。"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

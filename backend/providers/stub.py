@@ -1,7 +1,7 @@
 """确定性 stub provider：不联网、不做语义漏洞判断，只验证端到端链路。
 
 它根据对话中已有的工具结果决定下一步，模拟一个最简单的自主循环：
-find_files -> grep_content -> read_file -> 收尾。
+有知识索引时先检索，然后 find_files -> grep_content -> read_file -> 收尾。
 """
 
 from __future__ import annotations
@@ -92,11 +92,32 @@ class StubProvider(Provider):
         user_content = _extract_user_content(messages)
         function_name = _extract_function_name(user_content)
         steps = _tool_steps(messages)
+        searched = any(
+            message.get("role") == "tool" and message.get("name") == "search_knowledge"
+            for message in messages
+        )
+        if steps == 0 and any(tool["function"]["name"] == "search_knowledge" for tool in tools):
+            return AssistantTurn(
+                content="先检索历史相似案例。",
+                tool_calls=[
+                    ToolCall(
+                        id="stub-knowledge",
+                        name="search_knowledge",
+                        arguments={"query": function_name or "C/C++ 函数"},
+                    )
+                ],
+            )
+
+        if searched:
+            if not tools:
+                return self._final_turn("已用完工具调用机会，当前证据不足，给出 benign。")
+            steps -= 1
 
         if steps == 0:
             pattern = _file_pattern(function_name)
+            preliminary = "初判：现有信息需要与快照中的定义核对。" if searched else ""
             return AssistantTurn(
-                content=f"先按函数名线索查找相关源文件（pattern={pattern}）。",
+                content=f"{preliminary}先按函数名线索查找相关源文件（pattern={pattern}）。",
                 tool_calls=[
                     ToolCall(
                         id="stub-step1-find",

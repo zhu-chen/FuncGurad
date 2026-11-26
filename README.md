@@ -71,10 +71,12 @@ npm run dev
 | 最大输出 | 16384 tokens（`FUNCGUARD_LLM_MAX_TOKENS`） |
 | 单样本总超时 | 600 s（`FUNCGUARD_AGENT_TIMEOUT`） |
 | 单次模型请求超时 | 180 s（`FUNCGUARD_LLM_TIMEOUT`） |
+| Agent 提示词 | `retrieval_first`（`FUNCGUARD_AGENT_PROMPT_PROFILE`，另可设为 `legacy`） |
 
 - 启动时自动读取仓库根目录的 `.env.local` 与 `.env`，真实环境变量优先；这两个文件不入库。
 - `FUNCGUARD_LLM_PROVIDER=auto`（默认）：有 key 时使用真实模型，无 key 时回退 stub；设为 `zhipu` / `openai` / `glm` 时缺少 key 会直接报错。
-- provider 使用 OpenAI Chat Completions + function calling 协议，模型在本地 Agent 循环中调用四个只读工具，最终结论仍经过证据门控。
+- provider 使用 OpenAI Chat Completions + function calling 协议，模型在本地 Agent 循环中自主调用工具，最终结论仍经过证据门控。默认提示词在知识索引可用时引导模型先检索历史案例，再写初判，证据不足时按需读仓；索引不可用时从已提供的函数开始初判。复核 11 月 24 日的全量评测提示词时设为 `legacy`。
+- CLI 摘要、`report.json` 的逐样本 `runs[].flow` 和轨迹的 `run_end.payload.flow` 记录提示词配置、知识索引可用性、工具调用次数与顺序。浏览器中可展开「report.json 原始内容」查看。[流程说明](docs/handoff/2026-11-26-agent-flow.md)
 - **模型接入已完成**：配置 key 后 provider 会直接调用 `glm-5.3-flash`，支持 function calling 与完整 Agent 闭环。
 - 注意：`https://agent-api.bigmodel.cn/api/agent/managed` 是智谱 **Managed Agents（云端托管 Agent）** 的地址，只提供 `/v1/agents`、`/v1/sessions`、`/v1/environments` 等路由，不是模型对话接口。本次没有接入 Managed Agents 这一产品形态；本项目保留本地 Agent 循环，因此使用同一账号下的标准模型 API。如果以后要改用 Managed Agents，需要新增 session/SSE 执行链路，详见 [P6 交接文档](docs/handoff/2026-11-23-p6-real-model.md)。
 

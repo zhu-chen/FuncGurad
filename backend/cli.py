@@ -66,7 +66,7 @@ def _print_summary(payload: dict[str, Any]) -> None:
     )
     if provider.get("fallback_reason"):
         print(f"回退原因: {provider['fallback_reason']}")
-    print(f"工具: {', '.join(provider['tools'])}")
+    print(f"已注册工具: {', '.join(provider['tools'])}")
     print()
 
     runs = payload["runs"]
@@ -83,6 +83,17 @@ def _print_summary(payload: dict[str, Any]) -> None:
             print("  工具轨迹:")
             for call in item["tool_calls"]:
                 print(f"    - {_describe_tool(call)}")
+        flow = item.get("flow")
+        if flow:
+            knowledge_first = {True: "是", False: "否", None: "不适用"}
+            first_tool = flow["first_tool"]
+            tool_label = "无" if first_tool is None else first_tool or "未命名"
+            print(
+                f"  流程 {flow['prompt_profile']} · 知识索引{'可用' if flow['knowledge_available'] else '不可用'}"
+                f" · {flow['knowledge_calls']} 次检索 / {flow['repo_tool_calls']} 次读仓"
+                f" · 首个工具 {tool_label}"
+                f" · 先检索 {knowledge_first[flow['knowledge_before_repo']]}"
+            )
         print(f"  结论: {item['verdict']} (prediction={item['prediction']})")
         print(f"  理由: {item['reason']}")
         gate = item.get("evidence_gate") or {}

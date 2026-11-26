@@ -8,13 +8,17 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.agent.prompts import SYSTEM_PROMPT, build_user_prompt
+from backend.agent.prompts import build_system_prompt, build_user_prompt
 from backend.agent.trace import TraceWriter
 from backend.config import AgentSettings
 from backend.providers.base import AssistantTurn, Provider, ProviderError
 from bench.dataset import Sample
+from rag.retriever import KnowledgeIndexError, get_retriever
 from repo_tools.base import SnapshotGuard, ToolError, ToolResult
 from repo_tools.registry import TOOL_SCHEMAS, dispatch, summarize
+
+KNOWLEDGE_TOOL = "search_knowledge"
+REPO_TOOLS = {"find_files", "grep_content", "read_file"}
 
 
 @dataclass
@@ -35,6 +39,7 @@ class AgentOutcome:
     hit_max_steps: bool = False
     gate: dict[str, Any] = field(default_factory=dict)
     final_raw: dict[str, Any] | None = None
+    flow: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_final_answer(content: str) -> dict[str, Any]:
@@ -156,6 +161,36 @@ def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:
     return message
 
 
+def _available_tools() -> tuple[list[dict[str, Any]], bool]:
+    tools = [tool for tool in TOOL_SCHEMAS if tool["function"]["name"] != KNOWLEDGE_TOOL]
+    if len(tools) == len(TOOL_SCHEMAS):
+        return tools, False
+    try:
+        get_retriever()
+    except (KnowledgeIndexError, OSError, ValueError, KeyError, TypeError):
+        return tools, False
+    return TOOL_SCHEMAS, True
+
+
+def _summarize_flow(
+    tool_calls: list[dict[str, Any]], knowledge_available: bool, profile: str
+) -> dict[str, Any]:
+    names = [call["name"] for call in tool_calls]
+    knowledge_positions = [index for index, name in enumerate(names) if name == KNOWLEDGE_TOOL]
+    repo_positions = [index for index, name in enumerate(names) if name in REPO_TOOLS]
+    knowledge_before_repo = None
+    if repo_positions:
+        knowledge_before_repo = bool(knowledge_positions and knowledge_positions[0] < repo_positions[0])
+    return {
+        "prompt_profile": profile,
+        "knowledge_available": knowledge_available,
+        "knowledge_calls": len(knowledge_positions),
+        "repo_tool_calls": len(repo_positions),
+        "first_tool": names[0] if names else None,
+        "knowledge_before_repo": knowledge_before_repo,
+    }
+
+
 def _outcome(
     sample: Sample,
     trace: TraceWriter,
@@ -169,6 +204,7 @@ def _outcome(
     timed_out: bool,
     hit_max_steps: bool,
     gate: dict[str, Any],
+    flow: dict[str, Any],
 ) -> AgentOutcome:
     prediction = 1 if verdict == "vulnerable" else 0
     return AgentOutcome(
@@ -188,6 +224,7 @@ def _outcome(
         hit_max_steps=hit_max_steps,
         gate=gate,
         final_raw=final,
+        flow=flow,
     )
 
 
@@ -202,8 +239,12 @@ def run_agent(
 ) -> AgentOutcome:
     """运行一次自主循环；模型自己决定何时调用工具、何时收尾。"""
     deadline = time.monotonic() + settings.timeout_seconds
+    tools, knowledge_available = _available_tools()
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "system",
+            "content": build_system_prompt(settings.prompt_profile, knowledge_available),
+        },
         {
             "role": "user",
             "content": build_user_prompt(
@@ -212,6 +253,7 @@ def run_agent(
                 sample.func,
                 snapshot_display,
                 locate_path=locate_path,
+                profile=settings.prompt_profile,
             ),
         },
     ]
@@ -225,6 +267,7 @@ def run_agent(
             "snapshot_dir": snapshot_display,
             "max_steps": settings.max_steps,
             "timeout_seconds": settings.timeout_seconds,
+            "prompt_profile": settings.prompt_profile,
         },
     )
 
@@ -272,7 +315,7 @@ def run_agent(
                     ),
                 }
             )
-        active_tools = [] if final_step else TOOL_SCHEMAS
+        active_tools = [] if final_step else tools
         started = time.perf_counter()
         try:
             turn = provider.complete(
@@ -409,6 +452,7 @@ def run_agent(
         timed_out=timed_out,
         hit_max_steps=0 < steps == settings.max_steps,
         gate=gate,
+        flow=_summarize_flow(tool_calls_log, knowledge_available, settings.prompt_profile),
     )
 
     trace.emit(
@@ -433,6 +477,7 @@ def run_agent(
             "timed_out": outcome.timed_out,
             "hit_max_steps": outcome.hit_max_steps,
             "is_stub": outcome.is_stub,
+            "flow": outcome.flow,
         },
     )
     return outcome
