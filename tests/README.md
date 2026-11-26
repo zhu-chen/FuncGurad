@@ -29,8 +29,6 @@ python -m pytest -q
 - 默认用例全部使用 `tmp_path` 自造夹具，不需要课程数据集、快照、知识索引、网络或模型 key。
 - 依赖真实数据的用例用 `skipif` 标记，干净 clone 上默认跳过：
   - `tests/test_dataset.py::test_real_dataset_shape`（需要 `cache/dataset/test.jsonl`）
-- 已知生产缺陷用 `xfail(strict=True)` 记录，仓库修复后该用例会立即转红提醒更新：
-  - `tests/test_agent_loop.py::test_hit_max_steps_flag_reports_true_on_exhaustion`
-    （`backend/agent/loop.py` 的 `hit_max_steps` 分支实际不可达，步数耗尽时该标记恒为 False）
+- 2026.11.26 离线基线为 91 passed / 1 skipped / 0 xfailed。`hit_max_steps` 回归用例纳入常规测试，覆盖触发最后一步强制收束与提前结束的标记。
 
 测试只读调用生产代码，不修改 `shared/contracts`、`backend/agent`、`scripts/` 或 `cache/`。

@@ -234,7 +234,6 @@ def run_agent(
     steps = 0
     llm_steps = 0
     timed_out = False
-    hit_max_steps = False
     provider_error: str | None = None
     invalid_answer: str | None = None
 
@@ -388,7 +387,6 @@ def run_agent(
         elif invalid_answer is not None:
             reason = f"模型未返回合法 JSON 结论（{invalid_answer}），保守判定 benign。"
         else:
-            hit_max_steps = steps >= settings.max_steps
             reason = (
                 f"达到最大步数 {settings.max_steps} 仍未收尾，"
                 "按证据门控判定 benign。"
@@ -409,7 +407,7 @@ def run_agent(
         llm_steps=llm_steps,
         tool_calls=tool_calls_log,
         timed_out=timed_out,
-        hit_max_steps=hit_max_steps,
+        hit_max_steps=0 < steps == settings.max_steps,
         gate=gate,
     )
 

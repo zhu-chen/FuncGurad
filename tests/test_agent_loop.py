@@ -134,7 +134,7 @@ def test_vulnerable_with_verified_evidence_is_kept(tmp_path):
         sample=_sample(),
         guard=_snapshot(tmp_path),
         provider=provider,
-        settings=_settings(),
+        settings=_settings(max_steps=2),
         trace=trace,
         snapshot_display="snap",
     )
@@ -142,6 +142,7 @@ def test_vulnerable_with_verified_evidence_is_kept(tmp_path):
     assert outcome.prediction == 1
     assert outcome.verdict == "vulnerable"
     assert outcome.gate["applied"] is False
+    assert outcome.hit_max_steps is True
     assert [item["path"] for item in outcome.evidence] == ["src/a.c"]
     assert any(call["ok"] for call in outcome.tool_calls)
 
@@ -209,6 +210,7 @@ def test_benign_is_not_affected_by_gate(tmp_path):
 
     assert outcome.prediction == 0
     assert outcome.gate["applied"] is False
+    assert outcome.hit_max_steps is False
 
 
 def test_max_steps_terminates_without_looping(tmp_path):
@@ -232,13 +234,6 @@ def test_max_steps_terminates_without_looping(tmp_path):
     assert outcome.gate["applied"] is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "生产缺陷：loop.py 只在 final 为空且非超时/非非法回答的分支设置 "
-        "hit_max_steps，而该分支实际不可达；步数耗尽时该标记恒为 False。"
-    ),
-)
 def test_hit_max_steps_flag_reports_true_on_exhaustion(tmp_path):
     provider = AlwaysToolProvider()
 
@@ -271,6 +266,7 @@ def test_total_timeout_terminates_without_looping(tmp_path):
 
     assert elapsed < 5
     assert outcome.timed_out is True
+    assert outcome.hit_max_steps is False
     assert outcome.prediction == 0
     assert "超时" in outcome.reason
 
@@ -287,6 +283,7 @@ def test_provider_error_falls_back_to_benign(tmp_path):
     )
 
     assert provider.calls == 1
+    assert outcome.hit_max_steps is False
     assert outcome.verdict == "benign"
     assert outcome.prediction == 0
     assert "模型调用失败" in outcome.reason

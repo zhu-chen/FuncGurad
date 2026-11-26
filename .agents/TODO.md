@@ -44,7 +44,7 @@
 - 完成判据：`pytest` 全绿并覆盖上述五块；一条命令可跑；测试数据不含测试集或知识库原文。
 - 状态：已完成并合并（2026-11-24），当前 `main` 见仓库 HEAD。已覆盖：`bench/score.py` 四类计数/等级/降级、`bench/dataset.py` 读取校验、`SnapshotGuard` 与三个只读工具越界拒绝、Agent 证据门控/最大步数/总超时、`result.jsonl`/`report.json`/`trace.jsonl` 契约、RAG 索引与检索、API 降级与 503。实测 `pytest -q`：90 passed / 1 skipped / 1 xfailed。
 - 仍未覆盖：真实模型与 300 条评测、`repo_service` 快照与函数定位、`scripts/` 全量驱动、前端 `web/`、CLI 端到端、SSE 轨迹时序。
-- 已知缺陷：`backend/agent/loop.py` 的 `hit_max_steps` 分支不可达，步数耗尽时恒为 False；已用 `xfail(strict=True)` 记录，未改生产代码。
+- 步数标记缺陷：WillLin 于 2026.11.26 认领并修复，标记表示循环已进入最后一步强制收束；离线基线 91 passed / 1 skipped / 0 xfailed。
 - 认领人：当前协作者（这是哪位xd，麻烦写一下具体名字）
 
 ## 4. 确定仓库结构（遗留）
